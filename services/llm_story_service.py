@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import json, requests
+import json, requests, re
 from typing import Dict, List, Any
 from services.core.key_manager import get_key
 
@@ -48,6 +48,150 @@ LANGUAGE_NAMES = {
     'th': 'Thai (ภาษาไทย)',
     'id': 'Indonesian (Bahasa Indonesia)'
 }
+
+def _fix_json_formatting(text: str) -> str:
+    """
+    Apply comprehensive JSON formatting fixes for common LLM errors.
+    
+    Args:
+        text: JSON string to fix
+        
+    Returns:
+        Fixed JSON string
+    """
+    # Fix missing commas between JSON properties (common LLM error)
+    # Pattern 1: "value" followed by "key" without comma
+    text = re.sub(r'"\s+"', '", "', text)
+    
+    # Pattern 2: number/boolean/null followed by "key" without comma
+    # Handles cases like: 1 "desc" -> 1, "desc"
+    text = re.sub(r'(\d+|true|false|null)(\s+)"', r'\1, "', text)
+    
+    # Pattern 3: closing ] or } followed by "key" without comma
+    # Handles cases like: ] "key" -> ], "key" or } "key" -> }, "key"
+    text = re.sub(r'(]|})(\s+)"', r'\1, "', text)
+    
+    # Fix missing commas between objects in arrays: }{ -> },{
+    text = re.sub(r'\}\s*\{', '}, {', text)
+    
+    # Fix missing commas: ]{ -> ],[
+    text = re.sub(r'\]\s*\{', '], {', text)
+    
+    # Fix missing commas: }[ -> },[
+    text = re.sub(r'\}\s*\[', '}, [', text)
+    
+    # Remove duplicate commas: ,, -> ,
+    text = re.sub(r',\s*,', ',', text)
+    
+    # Remove trailing commas before } or ]
+    text = re.sub(r',(\s*[}\]])', r'\1', text)
+    
+    return text
+
+def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str, Any]:
+    """
+    Robust JSON parser with 5 fallback strategies to handle malformed LLM responses.
+    
+    Handles common LLM formatting errors including:
+    - Missing commas between properties
+    - Missing commas between objects in arrays
+    - Trailing commas
+    - Duplicate commas
+    - Markdown code blocks
+    - Single quotes instead of double quotes
+    
+    Args:
+        response_text: Raw text response from LLM
+        source: Source identifier for logging (e.g., "Gemini", "OpenAI")
+    
+    Returns:
+        Parsed JSON dictionary
+        
+    Raises:
+        json.JSONDecodeError: If all parsing strategies fail
+    """
+    if not response_text or not response_text.strip():
+        raise ValueError(f"Empty response from {source}")
+
+    # Strategy 1: Direct JSON parse
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 1 failed (direct parse): {e}")
+
+    # Strategy 2: Extract from markdown code blocks
+    try:
+        # Remove markdown code blocks (```json ... ``` or ``` ... ```)
+        if "```" in response_text:
+            # Extract content between code blocks
+            pattern = r'```(?:json)?\s*(.*?)\s*```'
+            matches = re.findall(pattern, response_text, re.DOTALL)
+            if matches:
+                cleaned = matches[0].strip()
+                return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 2 failed (markdown extraction): {e}")
+
+    # Strategy 3: Fix common issues
+    try:
+        cleaned = response_text.strip()
+
+        # Remove BOM if present
+        if cleaned.startswith('\ufeff'):
+            cleaned = cleaned[1:]
+
+        # Remove invisible characters
+        cleaned = cleaned.replace('\u200b', '')
+
+        # Remove markdown code blocks
+        cleaned = re.sub(r'```(?:json)?\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```', '', cleaned)
+
+        # Replace single quotes with double quotes (simple approach)
+        if "'" in cleaned and cleaned.count("'") > cleaned.count('"'):
+            cleaned = cleaned.replace("'", '"')
+
+        # Apply comprehensive JSON formatting fixes
+        cleaned = _fix_json_formatting(cleaned)
+
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 3 failed (common fixes): {e}")
+
+    # Strategy 4: Find JSON by boundaries
+    try:
+        # Find first { and last }
+        start = response_text.find('{')
+        end = response_text.rfind('}')
+
+        if start != -1 and end != -1 and end > start:
+            json_str = response_text[start:end+1]
+
+            # Try to parse
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                # Apply comprehensive JSON formatting fixes
+                json_str = _fix_json_formatting(json_str)
+                return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 4 failed (boundary extraction): {e}")
+
+    # Strategy 5: Detailed error logging and re-raise
+    print(f"[ERR] {source} All JSON parsing strategies failed!")
+    print(f"[DEBUG] Response length: {len(response_text)} characters")
+    print(f"[DEBUG] First 500 chars: {response_text[:500]}")
+    print(f"[DEBUG] Last 500 chars: {response_text[-500:]}")
+
+    # Try one last time to get a better error message
+    try:
+        json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(
+            f"{source} JSON parsing failed after all strategies. Original error: {e.msg}",
+            e.doc,
+            e.pos
+        )
 
 def _detect_animal_content(idea, topic=None):
     """Detect if the content is about animals/wildlife
@@ -704,7 +848,7 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
     }
     r=requests.post(url,headers=headers,json=data,timeout=240); r.raise_for_status()
     txt=r.json()["choices"][0]["message"]["content"]
-    return json.loads(txt)
+    return parse_llm_response_safe(txt, "OpenAI")
 
 def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
     """
@@ -756,7 +900,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
             # Parse response
             out = r.json()
             txt = out["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(txt)
+            return parse_llm_response_safe(txt, "Gemini")
 
         except requests.exceptions.HTTPError as e:
             # Only retry 503 errors
