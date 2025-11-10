@@ -320,7 +320,7 @@ def run_image_recipe(
         
         headers = {
             "authorization": f"Bearer {bearer_token}",
-            "content-type": "text/plain;charset=UTF-8",
+            "content-type": "application/json",
             "origin": "https://labs.google",
             "referer": "https://labs.google/",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -350,9 +350,8 @@ def run_image_recipe(
         log(f"[DEBUG] Payload keys: {list(payload.keys())}")
         log(f"[DEBUG] Recipe inputs count: {len(recipe_media_inputs)}")
         
-        # CRITICAL: Must use data= with json.dumps() and Content-Type: text/plain;charset=UTF-8
-        # Using json= parameter sets Content-Type: application/json which causes 500 error
-        response = requests.post(url, data=json.dumps(payload), headers=headers, timeout=120)
+        # Use json= parameter with application/json content-type (same as other Google APIs)
+        response = requests.post(url, json=payload, headers=headers, timeout=120)
         
         if response.status_code != 200:
             log(f"[ERROR] Whisk recipe failed with status {response.status_code}")
