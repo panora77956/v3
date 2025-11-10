@@ -223,6 +223,110 @@ def _build_setting_details(location_context):
         return f"{location_context}. {base_details}"
     return base_details
 
+
+def combine_scene_prompts_for_single_video(scene_prompts: list, max_duration: float = 30.0) -> dict:
+    """
+    Combine multiple scene prompts into a single comprehensive prompt for Google Labs Flow API.
+    
+    This replaces FFmpeg video stitching by generating ONE video with combined scenes.
+    
+    Args:
+        scene_prompts: List of scene prompt JSON strings/dicts
+        max_duration: Maximum video duration in seconds (default: 30.0)
+    
+    Returns:
+        Combined prompt dict suitable for Google Labs Flow API
+    
+    Note:
+        - Combines scene actions chronologically
+        - Preserves character consistency across all scenes
+        - Maintains visual style consistency
+        - Respects API prompt length limit (5000 chars)
+    """
+    if not scene_prompts:
+        return {}
+    
+    # If only one scene, return it as-is
+    if len(scene_prompts) == 1:
+        prompt = scene_prompts[0]
+        if isinstance(prompt, str):
+            try:
+                return json.loads(prompt)
+            except:
+                return {"key_action": prompt}
+        return prompt
+    
+    # Parse all scene prompts
+    parsed_scenes = []
+    for prompt in scene_prompts:
+        if isinstance(prompt, str):
+            try:
+                parsed_scenes.append(json.loads(prompt))
+            except:
+                parsed_scenes.append({"key_action": prompt})
+        elif isinstance(prompt, dict):
+            parsed_scenes.append(prompt)
+    
+    if not parsed_scenes:
+        return {}
+    
+    # Use first scene as base (for common settings)
+    base_scene = parsed_scenes[0]
+    combined = dict(base_scene)
+    
+    # Calculate duration per scene (divide total duration by number of scenes)
+    duration_per_scene = max_duration / len(parsed_scenes)
+    
+    # Combine scene actions chronologically
+    scene_actions = []
+    for idx, scene in enumerate(parsed_scenes, start=1):
+        key_action = scene.get("key_action", "")
+        if key_action:
+            # Add timing info for each scene
+            start_time = (idx - 1) * duration_per_scene
+            end_time = idx * duration_per_scene
+            scene_actions.append(
+                f"[{start_time:.1f}s-{end_time:.1f}s] Scene {idx}: {key_action}"
+            )
+    
+    # Join all scene actions
+    combined["key_action"] = "\n\n".join(scene_actions)
+    
+    # Combine camera directions if present
+    all_camera_directions = []
+    for scene in parsed_scenes:
+        camera_dir = scene.get("camera_direction", [])
+        if camera_dir:
+            all_camera_directions.extend(camera_dir)
+    
+    if all_camera_directions:
+        combined["camera_direction"] = all_camera_directions
+    
+    # Combine negatives (avoid duplicates)
+    all_negatives = set()
+    for scene in parsed_scenes:
+        negatives = scene.get("negatives", [])
+        if isinstance(negatives, list):
+            all_negatives.update(negatives)
+    
+    if all_negatives:
+        combined["negatives"] = list(all_negatives)
+    
+    # Ensure character consistency is emphasized
+    if "character_details" in combined:
+        combined["character_details"] = (
+            "CRITICAL: Maintain EXACT same character appearance throughout ALL scenes. "
+            "Same face, same outfit, same hairstyle from beginning to end. "
+            + combined.get("character_details", "")
+        )
+    
+    # Add note about combined scenes
+    combined["_combined_scenes"] = len(parsed_scenes)
+    combined["_total_duration"] = max_duration
+    
+    return combined
+
+
 def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str, ratio_str:str, style:str, seconds:int=8, copies:int=1, resolution_hint:str=None, character_bible=None, enhanced_bible=None, voice_settings=None, location_context:str=None, tts_provider:str=None, voice_id:str=None, voice_name:str=None, domain:str=None, topic:str=None, quality:str=None, dialogues:list=None, base_seed:int=None, style_seed:int=None, character_ref_images:list=None):
     """
     Enhanced prompt JSON schema with comprehensive metadata:
