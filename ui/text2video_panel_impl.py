@@ -1111,6 +1111,7 @@ class _Worker(QObject):
         # polling with improved error handling
         retry_count = {}  # Track retry attempts per operation
         download_retry_count = {}  # Track download retry attempts
+        completed_jobs = []  # Track successfully downloaded jobs for 4K upscale
         max_retries = 3
         max_download_retries = 5
 
@@ -1222,6 +1223,8 @@ class _Worker(QObject):
                                 card["thumb"] = thumb
 
                                 self.log.emit(f"[SUCCESS] ✓ Downloaded: {os.path.basename(fp)}")
+                                # Add to completed jobs for 4K upscale
+                                completed_jobs.append(job_info)
                             else:
                                 # Track download retries
                                 download_key = f"{scene}_{copy_num}"
@@ -1327,19 +1330,22 @@ class _Worker(QObject):
             if not has_ffmpeg:
                 self.log.emit("[WARN] Không tìm thấy ffmpeg trong PATH — bỏ qua upscale 4K.")
             else:
-                for job_info in jobs:
+                self.log.emit(f"[INFO] Starting 4K upscale for {len(completed_jobs)} videos...")
+                for job_info in completed_jobs:
                     card = job_info['card']
                     if card.get("path"):
                         src=card["path"]
                         dst=src.replace(".mp4","_4k.mp4")
+                        self.log.emit(f"[4K] Upscaling scene {card['scene']} copy {card['copy']}...")
                         cmd=["ffmpeg","-y","-i",src,"-vf","scale=3840:-2","-c:v","libx264","-preset","fast",dst]
                         try:
                             subprocess.run(cmd, check=True)
                             card["path"]=dst
                             card["status"]="UPSCALED_4K"
                             self.job_card.emit(card)
+                            self.log.emit(f"[4K] ✓ Scene {card['scene']} copy {card['copy']}: Upscaled to 4K")
                         except Exception as e:
-                            self.log.emit(f"[ERR] 4K upscale fail: {e}")
+                            self.log.emit(f"[ERR] 4K upscale fail for scene {card['scene']} copy {card['copy']}: {e}")
 
     def _run_video_parallel(self, p, account_mgr):
         """
@@ -1615,6 +1621,7 @@ class _Worker(QObject):
 
         retry_count = {}
         download_retry_count = {}
+        completed_jobs = []  # Track successfully downloaded jobs for 4K upscale
         max_retries = 3
         max_download_retries = 5
 
@@ -1722,6 +1729,8 @@ class _Worker(QObject):
                                         card["thumb"] = thumb
 
                                     self.log.emit(f"[DOWNLOAD] Scene {scene} Copy {copy_num}: Downloaded")
+                                    # Add to completed jobs for 4K upscale
+                                    completed_jobs.append(job_info)
                                 else:
                                     card["status"] = "DOWNLOAD_FAILED"
                                     card["error_reason"] = "Tải video thất bại"
@@ -1789,19 +1798,20 @@ class _Worker(QObject):
 
         # 4K upscale if requested
         if up4k and shutil.which("ffmpeg"):
-            self.log.emit("[INFO] Starting 4K upscale...")
-            for job_info in jobs:
+            self.log.emit(f"[INFO] Starting 4K upscale for {len(completed_jobs)} videos...")
+            for job_info in completed_jobs:
                 card = job_info['card']
                 if card.get("path"):
                     src = card["path"]
                     dst = src.replace(".mp4", "_4k.mp4")
+                    self.log.emit(f"[4K] Upscaling scene {card['scene']} copy {card['copy']}...")
                     cmd = ["ffmpeg", "-y", "-i", src, "-vf", "scale=3840:-2", "-c:v", "libx264", "-preset", "fast", dst]
                     try:
                         subprocess.run(cmd, check=True)
                         card["path"] = dst
                         card["status"] = "UPSCALED_4K"
                         self.job_card.emit(card)
-                        self.log.emit(f"[4K] Scene {card['scene']} Copy {card['copy']}: Upscaled")
+                        self.log.emit(f"[4K] ✓ Scene {card['scene']} copy {card['copy']}: Upscaled to 4K")
                     except Exception as e:
-                        self.log.emit(f"[ERR] 4K upscale failed: {e}")
+                        self.log.emit(f"[ERR] 4K upscale failed for scene {card['scene']} copy {card['copy']}: {e}")
 
