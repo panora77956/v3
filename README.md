@@ -184,6 +184,7 @@ python3 main_image2video.py
 - [TTS Service](docs/TTS_SERVICE.md)
 - [Video Generation Fixes](docs/VIDEO_GENERATION_FIXES.md)
 - [New Features](docs/NEW_FEATURES.md)
+- **[Vietnamese Text Fix](docs/VIETNAMESE_TEXT_FIX.md)** - Vietnamese text overlay and encoding fix
 - **[History Tab Feature](docs/HISTORY_TAB_FEATURE.md)** - Video creation history tracking
 - **[History Tab UI Mockup](docs/HISTORY_TAB_UI_MOCKUP.md)** - Visual UI design
 
@@ -338,6 +339,13 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 
 ## 📊 Phiên Bản / Version History
 
+### v7.2.4 (2025-11-10) - Vietnamese Text Overlay Fix
+- 🐛 **Fix**: Fixed Vietnamese text encoding issues in video overlays and thumbnails
+- ✨ **Enhancement**: Prioritize Roboto fonts with full Vietnamese diacritical mark support
+- 🎨 **Enhancement**: Strengthened negative prompts to prevent text overlays in videos (379 chars)
+- 🌏 **Localization**: All Vietnamese characters (á, à, ả, ã, ạ, ă, â, ê, ô, ơ, ư, đ) now render correctly
+- 📚 **Documentation**: Added comprehensive fix documentation in docs/VIETNAMESE_TEXT_FIX.md
+
 ### v7.2.3 (2025-11-08) - Video Ban Hang Scene-Level Generation
 - 🐛 **Fix**: Fixed scene video retry bug - videos now go to correct scene instead of wrong scene
 - 🔄 **Feature**: Added per-scene image regeneration ("🔄 Tạo lại" button now works)
@@ -405,6 +413,6 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 **Made with ❤️ by chamnv-dev**
 
-**Version:** 7.2.3
-**Updated:** 2025-11-08
+**Version:** 7.2.4
+**Updated:** 2025-11-10
 **Status:** ✅ Production Ready & Secure
