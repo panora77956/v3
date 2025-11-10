@@ -507,6 +507,11 @@ class Text2VideoPanelV5(QWidget):
         self.cb_style.addItem("━━━ ANIMATION ━━━", "separator_1")
         self.cb_style.addItem("  Anime 2D (Phẳng, viền đậm)", "anime_2d")
         self.cb_style.addItem("  Anime Cinematic (Anime + Điện ảnh)", "anime_cinematic")
+        self.cb_style.addItem("  Pixar 3D (Phong cách Pixar)", "pixar_3d")
+        self.cb_style.addItem("  Disney 3D (Phong cách Disney)", "disney_3d")
+        self.cb_style.addItem("  DreamWorks 3D (Phong cách DreamWorks)", "dreamworks_3d")
+        self.cb_style.addItem("  Illumination 3D (Minions style)", "illumination_3d")
+        self.cb_style.addItem("  Studio Ghibli 3D (Ghibli 3D)", "ghibli_3d")
 
         # Group 2: Realistic Styles
         self.cb_style.addItem("━━━ REALISTIC ━━━", "separator_2")
@@ -607,6 +612,56 @@ class Text2VideoPanelV5(QWidget):
         # Row 4: Upscale
         self.cb_upscale = QCheckBox("Up Scale 4K")
         video_layout.addWidget(self.cb_upscale)
+
+        # Row 5: Character Reference Images
+        self.cb_use_char_ref = QCheckBox("📸 Sử dụng ảnh tham chiếu nhân vật (Character Reference)")
+        self.cb_use_char_ref.setFont(QFont("Segoe UI", 12))
+        self.cb_use_char_ref.stateChanged.connect(self._toggle_char_ref_ui)
+        video_layout.addWidget(self.cb_use_char_ref)
+
+        # Character reference image selection container (initially hidden)
+        self.char_ref_container = QWidget()
+        char_ref_layout = QVBoxLayout(self.char_ref_container)
+        char_ref_layout.setContentsMargins(20, 5, 0, 5)
+        
+        # Info label
+        info_lbl = QLabel("💡 Mỗi ảnh tương ứng với 1 nhân vật. Chọn nhiều ảnh nếu có nhiều nhân vật.")
+        info_lbl.setFont(QFont("Segoe UI", 10))
+        info_lbl.setStyleSheet("color: #666;")
+        info_lbl.setWordWrap(True)
+        char_ref_layout.addWidget(info_lbl)
+        
+        # Button and list container
+        btn_layout = QHBoxLayout()
+        self.btn_add_char_ref = QPushButton("➕ Thêm ảnh nhân vật")
+        self.btn_add_char_ref.setMinimumHeight(32)
+        self.btn_add_char_ref.clicked.connect(self._add_character_reference_images)
+        btn_layout.addWidget(self.btn_add_char_ref)
+        
+        self.btn_clear_char_ref = QPushButton("🗑️ Xóa tất cả")
+        self.btn_clear_char_ref.setMinimumHeight(32)
+        self.btn_clear_char_ref.clicked.connect(self._clear_character_reference_images)
+        btn_layout.addWidget(self.btn_clear_char_ref)
+        btn_layout.addStretch()
+        char_ref_layout.addLayout(btn_layout)
+        
+        # List widget to show selected images
+        self.list_char_ref_images = QListWidget()
+        self.list_char_ref_images.setMaximumHeight(120)
+        self.list_char_ref_images.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background: #f9f9f9;
+            }
+        """)
+        char_ref_layout.addWidget(self.list_char_ref_images)
+        
+        video_layout.addWidget(self.char_ref_container)
+        self.char_ref_container.setVisible(False)  # Hidden by default
+        
+        # Store character reference image paths
+        self._character_ref_images = []
 
         colL.addWidget(video_group)
 
@@ -1163,6 +1218,42 @@ class Text2VideoPanelV5(QWidget):
     def _append_log(self, msg):
         self.console.append(msg)
 
+    def _toggle_char_ref_ui(self, state):
+        """Toggle visibility of character reference image UI"""
+        self.char_ref_container.setVisible(state == Qt.Checked)
+        if state != Qt.Checked:
+            # Clear images when disabled
+            self._clear_character_reference_images()
+
+    def _add_character_reference_images(self):
+        """Open file dialog to select character reference images"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Chọn ảnh tham chiếu nhân vật",
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)"
+        )
+        
+        if file_paths:
+            for path in file_paths:
+                if path not in self._character_ref_images:
+                    self._character_ref_images.append(path)
+                    # Add to list widget
+                    import os
+                    filename = os.path.basename(path)
+                    item = QListWidgetItem(f"🖼️ {filename}")
+                    item.setData(Qt.UserRole, path)  # Store full path
+                    item.setToolTip(path)  # Show full path on hover
+                    self.list_char_ref_images.addItem(item)
+            
+            self._append_log(f"[INFO] Đã thêm {len(file_paths)} ảnh tham chiếu nhân vật")
+
+    def _clear_character_reference_images(self):
+        """Clear all character reference images"""
+        self._character_ref_images.clear()
+        self.list_char_ref_images.clear()
+        self._append_log("[INFO] Đã xóa tất cả ảnh tham chiếu nhân vật")
+
     # === CONTINUE IN NEXT PART (methods from original) ===
     # Methods: stop_processing, _on_auto_generate, _run_in_thread,
     # _on_story_ready, _on_job_card, _open_project_dir, etc.
@@ -1564,6 +1655,9 @@ class Text2VideoPanelV5(QWidget):
                 base_seed = self._script_data.get("base_seed") if self._script_data else None
                 style_seed = self._script_data.get("style_seed") if self._script_data else None
 
+                # Get character reference images if enabled
+                char_ref_imgs = self._character_ref_images if self.cb_use_char_ref.isChecked() else None
+                
                 j = build_prompt_json(
                     r + 1, vi, tgt, lang_code, ratio_key, style,
                     character_bible=character_bible_basic,
@@ -1578,7 +1672,8 @@ class Text2VideoPanelV5(QWidget):
                     quality=quality_text,
                     dialogues=dialogues,
                     base_seed=base_seed,  # Issue #33: Pass base_seed for character consistency
-                    style_seed=style_seed  # PR #8: Pass style_seed for visual style consistency
+                    style_seed=style_seed,  # PR #8: Pass style_seed for visual style consistency
+                    character_ref_images=char_ref_imgs  # NEW: Pass character reference images
                 )
                 scenes.append({
                     "prompt": json.dumps(j, ensure_ascii=False, indent=2),

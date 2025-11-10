@@ -81,6 +81,36 @@ STYLE_TAG_MAP = {
             "live action", "real people"
         ]
     },
+    "pixar_3d": {
+        "tags": ["Pixar style", "3D animation", "smooth rendering", "expressive characters", "detailed textures", "cinematic lighting", "consistent character design"],
+        "negatives": [
+            "anime", "2d animation", "flat colors", "realistic photography", "live action", "photorealistic"
+        ]
+    },
+    "disney_3d": {
+        "tags": ["Disney 3D", "3D animation", "vibrant colors", "expressive eyes", "polished rendering", "magical atmosphere", "consistent character design"],
+        "negatives": [
+            "anime", "2d animation", "dark", "gritty", "realistic photography", "live action"
+        ]
+    },
+    "dreamworks_3d": {
+        "tags": ["DreamWorks style", "3D animation", "stylized characters", "expressive faces", "dynamic poses", "comedic timing", "consistent character design"],
+        "negatives": [
+            "anime", "2d animation", "realistic photography", "serious", "documentary"
+        ]
+    },
+    "illumination_3d": {
+        "tags": ["Illumination style", "3D animation", "colorful", "playful", "exaggerated expressions", "simple shapes", "consistent character design"],
+        "negatives": [
+            "anime", "2d animation", "dark", "realistic", "complex details"
+        ]
+    },
+    "ghibli_3d": {
+        "tags": ["Studio Ghibli 3D", "3D animation", "hand-drawn aesthetics", "soft colors", "natural beauty", "whimsical", "detailed backgrounds", "consistent character design"],
+        "negatives": [
+            "harsh lighting", "realistic photography", "cyberpunk", "sci-fi"
+        ]
+    },
     
     # Realistic Styles
     "realistic": {
@@ -193,7 +223,7 @@ def _build_setting_details(location_context):
         return f"{location_context}. {base_details}"
     return base_details
 
-def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str, ratio_str:str, style:str, seconds:int=8, copies:int=1, resolution_hint:str=None, character_bible=None, enhanced_bible=None, voice_settings=None, location_context:str=None, tts_provider:str=None, voice_id:str=None, voice_name:str=None, domain:str=None, topic:str=None, quality:str=None, dialogues:list=None, base_seed:int=None, style_seed:int=None):
+def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str, ratio_str:str, style:str, seconds:int=8, copies:int=1, resolution_hint:str=None, character_bible=None, enhanced_bible=None, voice_settings=None, location_context:str=None, tts_provider:str=None, voice_id:str=None, voice_name:str=None, domain:str=None, topic:str=None, quality:str=None, dialogues:list=None, base_seed:int=None, style_seed:int=None, character_ref_images:list=None):
     """
     Enhanced prompt JSON schema with comprehensive metadata:
     - Full persona with expertise_context
@@ -208,6 +238,7 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     Part G: Now supports dialogues for proper voiceover generation (Issue #7)
     Issue #33: Now supports base_seed for consistent style across scenes
     PR #8: Now supports style_seed for visual style consistency (separate from character seed)
+    NEW: Now supports character_ref_images for character consistency using reference images
     
     Args:
         base_seed: Optional base seed for consistency across scenes.
@@ -216,6 +247,8 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
         style_seed: Optional style seed for visual style consistency across scenes.
                    If None, generates a random seed.
                    Used to maintain same visual style (anime/realistic) throughout.
+        character_ref_images: Optional list of character reference image paths.
+                             Each image corresponds to one character for consistency.
     """
 
     ratio_map = {
@@ -746,6 +779,10 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
 
     # Add metadata
     data["metadata"] = metadata
+
+    # Add character reference images if provided
+    if character_ref_images:
+        data["character_reference_images"] = character_ref_images
 
     return data
 
