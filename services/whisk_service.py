@@ -291,6 +291,7 @@ def run_image_recipe(
     workflow_id: str,
     session_id: str,
     aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT",
+    image_model: str = "Imagen 3",
     log_callback: Optional[Callable] = None
 ) -> Optional[bytes]:
     """
@@ -302,6 +303,7 @@ def run_image_recipe(
         workflow_id: Workflow UUID
         session_id: Session ID
         aspect_ratio: Aspect ratio (IMAGE_ASPECT_RATIO_PORTRAIT, IMAGE_ASPECT_RATIO_SQUARE, etc.)
+        image_model: Imagen model to use (e.g., "Imagen 3", "Imagen 4", "Imagen 3 Portrait")
         log_callback: Optional logging callback
         
     Returns:
@@ -340,7 +342,7 @@ def run_image_recipe(
             },
             "seed": seed,
             "imageModelSettings": {
-                "imageModel": "Imagen 3",  # Changed from "R2I" to "Imagen 3"
+                "imageModel": image_model,  # Changed from "R2I" to valid model names
                 "aspectRatio": aspect_ratio
             },
             "userInstruction": prompt,
@@ -426,7 +428,8 @@ def run_image_recipe(
 
 
 def generate_image(prompt: str, model_image: Optional[str] = None, product_image: Optional[str] = None, 
-                   aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT", debug_callback: Optional[Callable] = None) -> Optional[bytes]:
+                   aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT", image_model: str = "Imagen 3", 
+                   debug_callback: Optional[Callable] = None) -> Optional[bytes]:
     """
     Generate image using Whisk with reference images
     
@@ -440,6 +443,7 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
         model_image: Path to model/character reference image
         product_image: Path to product reference image
         aspect_ratio: Aspect ratio (IMAGE_ASPECT_RATIO_PORTRAIT, IMAGE_ASPECT_RATIO_SQUARE, IMAGE_ASPECT_RATIO_LANDSCAPE)
+        image_model: Imagen model to use (default: "Imagen 3", also: "Imagen 4", "Imagen 3 Portrait", etc.)
         debug_callback: Callback for debug logging
         
     Returns:
@@ -517,7 +521,12 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
         log(f"[INFO] Whisk: Uploaded {len(recipe_media_inputs)} images successfully")
 
         # Step 3: Run image recipe with OAuth
-        log("[INFO] Whisk: Running image recipe with Bearer token...")
+        # Allow model override from config
+        from services.core.config import load as load_cfg
+        cfg = load_cfg()
+        actual_model = cfg.get('whisk_image_model', image_model)
+        
+        log(f"[INFO] Whisk: Running image recipe with Bearer token (model: {actual_model})...")
         
         result_image = run_image_recipe(
             prompt=prompt,
@@ -525,6 +534,7 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
             workflow_id=workflow_id,
             session_id=session_id,
             aspect_ratio=aspect_ratio,
+            image_model=actual_model,
             log_callback=log
         )
         
