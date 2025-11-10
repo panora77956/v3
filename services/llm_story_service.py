@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
-import json, requests
-from typing import Dict, List, Any
+import json
+import re
+from typing import Any, Dict, List
+
+import requests
+
 from services.core.key_manager import get_key
 
 # Constants for validation
@@ -13,7 +17,7 @@ VIETNAMESE_CHARS = set('àáảãạăằắẳẵặâầấẩẫậèéẻẽ
 
 # Common stop words for relevance checking (Vietnamese and English)
 STOP_WORDS = {
-    'và', 'các', 'của', 'là', 'được', 'có', 'trong', 'cho', 'với', 'để', 
+    'và', 'các', 'của', 'là', 'được', 'có', 'trong', 'cho', 'với', 'để',
     'một', 'này', 'đó', 'những', 'như', 'về', 'từ', 'bởi', 'khi', 'sẽ',
     'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
     'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been'
@@ -49,6 +53,150 @@ LANGUAGE_NAMES = {
     'id': 'Indonesian (Bahasa Indonesia)'
 }
 
+def _fix_json_formatting(text: str) -> str:
+    """
+    Apply comprehensive JSON formatting fixes for common LLM errors.
+
+    Args:
+        text: JSON string to fix
+
+    Returns:
+        Fixed JSON string
+    """
+    # Fix missing commas between JSON properties (common LLM error)
+    # Pattern 1: "value" followed by "key" without comma
+    text = re.sub(r'"\s+"', '", "', text)
+
+    # Pattern 2: number/boolean/null followed by "key" without comma
+    # Handles cases like: 1 "desc" -> 1, "desc"
+    text = re.sub(r'(\d+|true|false|null)(\s+)"', r'\1, "', text)
+
+    # Pattern 3: closing ] or } followed by "key" without comma
+    # Handles cases like: ] "key" -> ], "key" or } "key" -> }, "key"
+    text = re.sub(r'(]|})(\s+)"', r'\1, "', text)
+
+    # Fix missing commas between objects in arrays: }{ -> },{
+    text = re.sub(r'\}\s*\{', '}, {', text)
+
+    # Fix missing commas: ]{ -> ],[
+    text = re.sub(r'\]\s*\{', '], {', text)
+
+    # Fix missing commas: }[ -> },[
+    text = re.sub(r'\}\s*\[', '}, [', text)
+
+    # Remove duplicate commas: ,, -> ,
+    text = re.sub(r',\s*,', ',', text)
+
+    # Remove trailing commas before } or ]
+    text = re.sub(r',(\s*[}\]])', r'\1', text)
+
+    return text
+
+def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str, Any]:
+    """
+    Robust JSON parser with 5 fallback strategies to handle malformed LLM responses.
+
+    Handles common LLM formatting errors including:
+    - Missing commas between properties
+    - Missing commas between objects in arrays
+    - Trailing commas
+    - Duplicate commas
+    - Markdown code blocks
+    - Single quotes instead of double quotes
+
+    Args:
+        response_text: Raw text response from LLM
+        source: Source identifier for logging (e.g., "Gemini", "OpenAI")
+
+    Returns:
+        Parsed JSON dictionary
+
+    Raises:
+        json.JSONDecodeError: If all parsing strategies fail
+    """
+    if not response_text or not response_text.strip():
+        raise ValueError(f"Empty response from {source}")
+
+    # Strategy 1: Direct JSON parse
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 1 failed (direct parse): {e}")
+
+    # Strategy 2: Extract from markdown code blocks
+    try:
+        # Remove markdown code blocks (```json ... ``` or ``` ... ```)
+        if "```" in response_text:
+            # Extract content between code blocks
+            pattern = r'```(?:json)?\s*(.*?)\s*```'
+            matches = re.findall(pattern, response_text, re.DOTALL)
+            if matches:
+                cleaned = matches[0].strip()
+                return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 2 failed (markdown extraction): {e}")
+
+    # Strategy 3: Fix common issues
+    try:
+        cleaned = response_text.strip()
+
+        # Remove BOM if present
+        if cleaned.startswith('\ufeff'):
+            cleaned = cleaned[1:]
+
+        # Remove invisible characters
+        cleaned = cleaned.replace('\u200b', '')
+
+        # Remove markdown code blocks
+        cleaned = re.sub(r'```(?:json)?\s*', '', cleaned)
+        cleaned = re.sub(r'\s*```', '', cleaned)
+
+        # Replace single quotes with double quotes (simple approach)
+        if "'" in cleaned and cleaned.count("'") > cleaned.count('"'):
+            cleaned = cleaned.replace("'", '"')
+
+        # Apply comprehensive JSON formatting fixes
+        cleaned = _fix_json_formatting(cleaned)
+
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 3 failed (common fixes): {e}")
+
+    # Strategy 4: Find JSON by boundaries
+    try:
+        # Find first { and last }
+        start = response_text.find('{')
+        end = response_text.rfind('}')
+
+        if start != -1 and end != -1 and end > start:
+            json_str = response_text[start:end+1]
+
+            # Try to parse
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError:
+                # Apply comprehensive JSON formatting fixes
+                json_str = _fix_json_formatting(json_str)
+                return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 4 failed (boundary extraction): {e}")
+
+    # Strategy 5: Detailed error logging and re-raise
+    print(f"[ERR] {source} All JSON parsing strategies failed!")
+    print(f"[DEBUG] Response length: {len(response_text)} characters")
+    print(f"[DEBUG] First 500 chars: {response_text[:500]}")
+    print(f"[DEBUG] Last 500 chars: {response_text[-500:]}")
+
+    # Try one last time to get a better error message
+    try:
+        json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(
+            f"{source} JSON parsing failed after all strategies. Original error: {e.msg}",
+            e.doc,
+            e.pos
+        )
+
 def _detect_animal_content(idea, topic=None):
     """Detect if the content is about animals/wildlife
     
@@ -61,11 +209,11 @@ def _detect_animal_content(idea, topic=None):
     """
     if not idea:
         return False
-    
+
     # Check topic first
     if topic and ("động vật" in topic.lower() or "thú cưng" in topic.lower() or "animal" in topic.lower() or "pet" in topic.lower() or "wildlife" in topic.lower()):
         return True
-    
+
     # Common animal-related keywords in Vietnamese and English
     # Use word boundaries for better matching
     animal_keywords = [
@@ -92,10 +240,10 @@ def _detect_animal_content(idea, topic=None):
         # Pets
         "puppy", "kitten", "dog", "cat", "pet",
     ]
-    
+
     # Normalize and check with word boundaries
     idea_lower = idea.lower()
-    
+
     # Special case: exclude "python" if it's in a programming context
     if "python" in idea_lower and any(prog_word in idea_lower for prog_word in ["lập trình", "programming", "code", "tutorial", "học"]):
         # This is about Python programming, not python snake
@@ -104,7 +252,7 @@ def _detect_animal_content(idea, topic=None):
         # Check for "python" as the snake
         if " python " in f" {idea_lower} ":
             return True
-    
+
     # Use more precise matching - check if keyword appears as separate word or with spaces
     for keyword in animal_keywords:
         # Skip "python" as it's handled above
@@ -113,7 +261,7 @@ def _detect_animal_content(idea, topic=None):
         # Check if keyword exists with word boundaries (spaces, start/end of string)
         if f" {keyword} " in f" {idea_lower} " or idea_lower.startswith(f"{keyword} ") or idea_lower.endswith(f" {keyword}"):
             return True
-    
+
     return False
 
 
@@ -130,7 +278,7 @@ def _get_style_specific_guidance(style, idea=None, topic=None):
     """
     # Normalize style once for all checks
     style_normalized = style.lower()
-    
+
     # Check if content is about animals/wildlife - HIGHEST PRIORITY
     if _detect_animal_content(idea, topic):
         return """
@@ -383,7 +531,7 @@ IMPORTANT LANGUAGE REQUIREMENT:
     # Indicators: SCENE, ACT, INT./EXT., character profiles, dàn ý, kịch bản, screenplay
     idea_lower = (idea or "").lower()
     has_screenplay_markers = any(marker in idea_lower for marker in [
-        'scene ', 'act 1', 'act 2', 'act 3', 'int.', 'ext.', 
+        'scene ', 'act 1', 'act 2', 'act 3', 'int.', 'ext.',
         'kịch bản', 'screenplay', 'dàn ý', 'hồ sơ nhân vật',
         'fade in', 'fade out', 'close up', 'cut to'
     ])
@@ -397,7 +545,7 @@ IMPORTANT LANGUAGE REQUIREMENT:
 3. GIỮ NGUYÊN ý tưởng gốc, tính cách nhân vật, và luồng cảm xúc
 4. KHÔNG sáng tạo lại hoặc thay đổi concept cốt lõi
 """
-        base_role = f"""
+        base_role = """
 Bạn là **Biên kịch Chuyển đổi Format AI**. Nhận **kịch bản chi tiết** và chuyển đổi thành **format video tối ưu** mà KHÔNG thay đổi nội dung gốc.
 Mục tiêu: GIỮ NGUYÊN câu chuyện và nhân vật, chỉ tối ưu hóa cho video format."""
     else:
@@ -409,10 +557,10 @@ Mục tiêu: GIỮ NGUYÊN câu chuyện và nhân vật, chỉ tối ưu hóa c
 4. KHÔNG thay đổi concept cốt lõi hoặc tạo câu chuyện hoàn toàn khác
 5. Nếu ý tưởng đề cập nhân vật/địa điểm/sự kiện cụ thể → PHẢI xuất hiện trong kịch bản
 """
-        base_role = f"""
+        base_role = """
 Bạn là **Biên kịch Đa năng AI Cao cấp**. Nhận **ý tưởng thô sơ** và phát triển thành **kịch bản phim/video SIÊU HẤP DẪN**.
 Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của người dùng, giữ chân người xem từ giây đầu tiên."""
-    
+
     base_rules = f"""
 {base_role}
 
@@ -655,7 +803,7 @@ Trả về **JSON hợp lệ** theo schema EXACT (không thêm ký tự ngoài J
 
     # Adjust input label based on detected type
     input_label = "Kịch bản chi tiết" if has_screenplay_markers else "Ý tưởng thô"
-    
+
     # Add idea adherence reminder
     idea_adherence_reminder = ""
     if not has_screenplay_markers:
@@ -704,7 +852,7 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
     }
     r=requests.post(url,headers=headers,json=data,timeout=240); r.raise_for_status()
     txt=r.json()["choices"][0]["message"]["content"]
-    return json.loads(txt)
+    return parse_llm_response_safe(txt, "OpenAI")
 
 def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
     """
@@ -715,9 +863,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
     2. If 503 error, try up to 2 additional keys from config
     3. Add exponential backoff (1s, 2s, 4s)
     """
+    import time
+
     from services.core.api_config import gemini_text_endpoint
     from services.core.key_manager import get_all_keys
-    import time
 
     # Build key rotation list
     keys = [api_key]
@@ -756,7 +905,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
             # Parse response
             out = r.json()
             txt = out["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(txt)
+            return parse_llm_response_safe(txt, "Gemini")
 
         except requests.exceptions.HTTPError as e:
             # Only retry 503 errors
@@ -887,29 +1036,29 @@ def _validate_idea_relevance(idea, generated_content, threshold=0.15):
     """
     if not idea or not generated_content:
         return True, 0.0, None
-    
+
     # Extract key content from generated script
     title = generated_content.get("title_vi", "") or generated_content.get("title_tgt", "")
     outline = generated_content.get("outline_vi", "") or generated_content.get("outline_tgt", "")
     screenplay = generated_content.get("screenplay_vi", "") or generated_content.get("screenplay_tgt", "")
-    
+
     # Combine all generated text
     generated_text = f"{title} {outline} {screenplay}".lower()
     idea_text = idea.lower()
-    
+
     # Extract important words from idea (filter out common stop words)
     # Use module-level constant for better maintainability
     idea_words = [w for w in idea_text.split() if len(w) >= MIN_WORD_LENGTH and w not in STOP_WORDS]
-    
+
     if not idea_words:
         return True, 0.0, None  # Can't validate if no meaningful words
-    
+
     # Count how many idea words appear in generated content
     matched_words = [w for w in idea_words if w in generated_text]
     similarity = len(matched_words) / len(idea_words) if idea_words else 0.0
-    
+
     is_valid = similarity >= threshold
-    
+
     if not is_valid:
         # Smart truncation: only add '...' if idea is actually longer than max length
         idea_display = idea if len(idea) <= MAX_IDEA_DISPLAY_LENGTH else idea[:MAX_IDEA_DISPLAY_LENGTH] + '...'
@@ -921,7 +1070,7 @@ def _validate_idea_relevance(idea, generated_content, threshold=0.15):
             f"   Từ khóa xuất hiện: {', '.join(matched_words[:10]) if matched_words else 'Không có'}"
         )
         return False, similarity, warning
-    
+
     return True, similarity, None
 
 
@@ -941,18 +1090,18 @@ def _validate_scene_continuity(scenes: List[Dict[str, Any]]) -> List[str]:
     """
     if not scenes or len(scenes) < 2:
         return []
-    
+
     issues = []
-    
+
     for i in range(1, len(scenes)):
         prev_scene = scenes[i-1]
         curr_scene = scenes[i]
-        
+
         # Check location continuity
         prev_loc = prev_scene.get("location", "").lower()
         curr_loc = curr_scene.get("location", "").lower()
         transition = curr_scene.get("transition_from_previous", "").lower()
-        
+
         # If location changes dramatically without transition explanation
         if prev_loc and curr_loc and prev_loc != curr_loc:
             if not transition or len(transition) < 10:
@@ -960,47 +1109,47 @@ def _validate_scene_continuity(scenes: List[Dict[str, Any]]) -> List[str]:
                     f"Scene {i} -> {i+1}: Location jump from '{prev_loc}' to '{curr_loc}' "
                     f"without clear transition explanation"
                 )
-        
+
         # Check time continuity
         prev_time = prev_scene.get("time_of_day", "").lower()
         curr_time = curr_scene.get("time_of_day", "").lower()
-        
+
         # Detect illogical time jumps (e.g., night -> day in same location without explanation)
         if prev_time and curr_time and prev_loc == curr_loc:
             time_keywords = {
                 "day": ["day", "morning", "afternoon", "noon"],
                 "night": ["night", "evening", "dusk", "dawn"],
             }
-            
+
             prev_is_day = any(kw in prev_time for kw in time_keywords["day"])
             prev_is_night = any(kw in prev_time for kw in time_keywords["night"])
             curr_is_day = any(kw in curr_time for kw in time_keywords["day"])
             curr_is_night = any(kw in curr_time for kw in time_keywords["night"])
-            
+
             if (prev_is_day and curr_is_night) or (prev_is_night and curr_is_day):
                 if not transition or "time" not in transition:
                     issues.append(
                         f"Scene {i} -> {i+1}: Time jump from {prev_time} to {curr_time} "
                         f"in same location without explanation"
                     )
-        
+
         # Check character continuity
         prev_chars = set(prev_scene.get("characters", []))
         curr_chars = set(curr_scene.get("characters", []))
-        
+
         # Characters disappearing
         disappeared = prev_chars - curr_chars
         if disappeared and len(prev_chars) > 1:  # Only flag if multiple characters
             issues.append(
                 f"Scene {i} -> {i+1}: Characters {disappeared} disappeared without explanation"
             )
-        
+
         # New characters appearing
         appeared = curr_chars - prev_chars
         if appeared and i > 1:  # After first scene
             # This is less critical, but note it
             pass  # New characters can appear, so we don't flag this as an issue
-    
+
     return issues
 
 
@@ -1021,9 +1170,9 @@ def _validate_dialogue_language(scenes, target_lang):
     if not scenes or target_lang == 'vi':
         # Can't validate Vietnamese or if no scenes
         return True, None
-    
+
     issues = []
-    
+
     for scene_idx, scene in enumerate(scenes, 1):
         dialogues = scene.get("dialogues", [])
         for dlg_idx, dlg in enumerate(dialogues, 1):
@@ -1032,7 +1181,7 @@ def _validate_dialogue_language(scenes, target_lang):
                 if text_tgt:
                     # Simple heuristic: check for Vietnamese characters using module constant
                     has_vietnamese = any(c.lower() in VIETNAMESE_CHARS for c in text_tgt)
-                    
+
                     # If target is not Vietnamese but text has Vietnamese chars
                     if has_vietnamese and target_lang != 'vi':
                         speaker = dlg.get("speaker", "Unknown")
@@ -1040,7 +1189,7 @@ def _validate_dialogue_language(scenes, target_lang):
                             f"Scene {scene_idx}, Dialogue {dlg_idx} ({speaker}): "
                             f"Contains Vietnamese characters but target language is {LANGUAGE_NAMES.get(target_lang, target_lang)}"
                         )
-    
+
     if issues:
         warning = (
             f"⚠️ CẢNH BÁO: Một số lời thoại có thể không đúng ngôn ngữ đích!\n\n"
@@ -1049,9 +1198,9 @@ def _validate_dialogue_language(scenes, target_lang):
         )
         if len(issues) > 5:
             warning += f"\n... và {len(issues) - 5} vấn đề khác"
-        
+
         return False, warning
-    
+
     return True, None
 
 def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_key=None, output_lang='vi', domain=None, topic=None, voice_config=None, progress_callback=None):
@@ -1077,13 +1226,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         """Helper to report progress if callback is provided"""
         if progress_callback:
             progress_callback(msg, percent)
-    
+
     report_progress("Đang chuẩn bị...", 5)
-    
+
     gk, ok=_load_keys()
     n, per = _n_scenes(duration_seconds)
     mode = _mode_from_duration(duration_seconds)
-    
+
     report_progress("Đang xây dựng prompt...", 10)
 
     # Build base prompt
@@ -1117,7 +1266,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         res=_call_openai(prompt,key,"gpt-4-turbo")
         report_progress("Đã nhận phản hồi từ OpenAI", 50)
     if "scenes" not in res: raise RuntimeError("LLM không trả về đúng schema.")
-    
+
     report_progress("Đang kiểm tra tính duy nhất của các cảnh...", 60)
 
     # ISSUE #1 FIX: Validate scene uniqueness
@@ -1127,9 +1276,9 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         dup_msg = ", ".join([f"Scene {i} & {j} ({sim*100:.0f}% similar)" for i, j, sim in duplicates])
         print(f"[WARN] Duplicate scenes detected: {dup_msg}")
         # Note: We warn but don't fail - the UI can decide how to handle this
-    
+
     report_progress("Đang kiểm tra độ liên quan của kịch bản...", 70)
-    
+
     # ISSUE #3 FIX: Validate idea relevance
     # Use module-level constant for threshold
     is_relevant, relevance_score, warning_msg = _validate_idea_relevance(idea, res, threshold=IDEA_RELEVANCE_THRESHOLD)
@@ -1141,22 +1290,22 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     else:
         # Store score for debugging/telemetry
         res["idea_relevance_score"] = relevance_score
-    
+
     report_progress("Đang kiểm tra ngôn ngữ lời thoại...", 75)
-    
+
     # ISSUE #4 FIX: Validate dialogue language consistency
     dialogue_valid, dialogue_warning = _validate_dialogue_language(scenes, output_lang)
     if not dialogue_valid and dialogue_warning:
         print(dialogue_warning)
         res["dialogue_language_warning"] = dialogue_warning
-    
+
     report_progress("Đang tạo character bible...", 80)
-    
+
     # ISSUE #2 FIX: Enforce character consistency
     character_bible = res.get("character_bible", [])
     if character_bible:
         res["scenes"] = _enforce_character_consistency(scenes, character_bible)
-    
+
     # NEW: Validate and enhance scene continuity
     report_progress("Đang kiểm tra tính liên tục của các cảnh...", 85)
     scenes = res.get("scenes", [])
@@ -1170,15 +1319,15 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     if voice_config:
         report_progress("Đang lưu voice config...", 90)
         res["voice_config"] = voice_config
-    
+
     report_progress("Đang điều chỉnh thời lượng cảnh...", 95)
 
     # ép durations
     for i,d in enumerate(per):
         if i < len(res["scenes"]): res["scenes"][i]["duration"]=int(d)
-    
+
     report_progress("Hoàn tất!", 100)
-    
+
     return res
 
 
