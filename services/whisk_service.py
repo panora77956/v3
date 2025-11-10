@@ -330,6 +330,8 @@ def run_image_recipe(
         seed = random.randint(100000, 999999)
         
         # Correct payload structure matching Google Labs API
+        # NOTE: imageModel should be a valid Imagen model name, not "R2I"
+        # Valid values: "Imagen 3", "Imagen 4", "Imagen 3 Portrait", "Imagen 3 Landscape", etc.
         payload = {
             "clientContext": {
                 "workflowId": workflow_id,
@@ -338,7 +340,7 @@ def run_image_recipe(
             },
             "seed": seed,
             "imageModelSettings": {
-                "imageModel": "R2I",
+                "imageModel": "Imagen 3",  # Changed from "R2I" to "Imagen 3"
                 "aspectRatio": aspect_ratio
             },
             "userInstruction": prompt,
@@ -346,12 +348,23 @@ def run_image_recipe(
         }
         
         log("[INFO] Whisk: Running image recipe...")
+        log(f"[DEBUG] Payload: imageModel='{payload['imageModelSettings']['imageModel']}', aspectRatio='{payload['imageModelSettings']['aspectRatio']}'")
         
         response = requests.post(url, json=payload, headers=headers, timeout=120)
         
         if response.status_code != 200:
             log(f"[ERROR] Whisk recipe failed with status {response.status_code}")
-            log(f"[DEBUG] Response: {response.text[:200]}")
+            log(f"[DEBUG] Response: {response.text[:500]}")
+            # Try to parse error details
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    error_info = error_data['error']
+                    log(f"[ERROR] Error code: {error_info.get('code', 'unknown')}")
+                    log(f"[ERROR] Error message: {error_info.get('message', 'unknown')}")
+                    log(f"[ERROR] Error status: {error_info.get('status', 'unknown')}")
+            except:
+                pass
             return None
         
         data = response.json()
