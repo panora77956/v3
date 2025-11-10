@@ -107,12 +107,24 @@ def _normalize_status(item: dict) -> str:
     return "PROCESSING"
 
 def _extract_negative_prompt(prompt_data: Any) -> str:
-    """Extract negative prompt from prompt data structure."""
+    """
+    Extract negative prompt from prompt data structure.
+    
+    CRITICAL: Includes explicit text avoidance to prevent text overlays in videos,
+    especially important for Vietnamese content which may have encoding issues.
+    """
     if isinstance(prompt_data, dict):
         negatives = prompt_data.get("negatives", [])
         if isinstance(negatives, list) and negatives:
             return ", ".join(str(neg) for neg in negatives)
-    return "text, words, letters, subtitles, captions, titles, credits, on-screen text, watermarks, logos, brands, camera shake, fisheye, photorealistic, live action, 3D CGI, Disney 3D, Pixar style"
+    # Enhanced negative prompt with explicit Vietnamese text avoidance
+    # Issue: Vietnamese text overlays appearing in videos with encoding errors
+    return ("text overlays, on-screen text, burned-in text, hardcoded text, embedded text, "
+            "text, words, letters, characters, typography, writing, script, "
+            "subtitles, captions, titles, credits, labels, annotations, "
+            "watermarks, logos, brands, signatures, stamps, "
+            "Vietnamese text, English text, any language text, "
+            "camera shake, fisheye, photorealistic, live action, 3D CGI, Disney 3D, Pixar style")
 
 def _truncate_prompt_smart(prompt: str, max_length: int = MAX_PROMPT_LENGTH) -> str:
     """

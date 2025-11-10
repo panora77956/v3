@@ -506,11 +506,24 @@ def generate_thumbnail_with_text(base_image_path: str, text: str, output_path: s
     # Create drawing context
     draw = ImageDraw.Draw(img)
 
-    # Try to load a bold font, fallback to default
+    # Try to load a bold font with Vietnamese support, fallback to default
     font_size = max(40, img.height // 20)
     try:
-        # Try common font locations
+        # Get project root directory to locate bundled fonts
+        import os
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parent.parent
+        
+        # Try font locations in priority order:
+        # 1. Bundled Roboto fonts (supports Vietnamese diacritics)
+        # 2. System fonts with Vietnamese support
+        # 3. Common system fonts
         font_paths = [
+            # Bundled fonts with full Vietnamese support
+            str(project_root / "ui" / "styles" / "fonts" / "Roboto-Bold.ttf"),
+            str(project_root / "ui" / "styles" / "fonts" / "Roboto-Medium.ttf"),
+            str(project_root / "ui" / "styles" / "fonts" / "Roboto-Regular.ttf"),
+            # System fonts with Vietnamese support
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
             "C:\\Windows\\Fonts\\arialbd.ttf"
