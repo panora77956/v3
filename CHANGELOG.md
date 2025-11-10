@@ -2,6 +2,17 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
+## [7.2.7] - 2025-11-10
+
+### Fixed - Whisk API 500 Error
+- **Critical Fix**: Resolved Whisk API 500 "Internal error encountered" error
+- Changed `Content-Type` header from `text/plain;charset=UTF-8` to `application/json`
+- Changed request method from `data=json.dumps()` to `json=` parameter
+- Aligned with standard Google API patterns used elsewhere in codebase
+- Added enhanced debugging logs for 500 errors
+- **Impact**: Whisk image generation should now work correctly
+- **Documentation**: Added `docs/WHISK_500_ERROR_FIX.md` with detailed analysis
+
 ## [7.2.6] - 2025-11-10
 
 ### Removed - Code Cleanup
