@@ -2,22 +2,6 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
-## [7.2.7] - 2025-11-10
-
-### Fixed - Whisk API Integration
-- 🐛 **Critical Bug Fix**: Fixed Whisk API 500 "Internal error encountered" error
-  - Changed `imageModel` from invalid "R2I" to valid model names (default: "Imagen 3")
-  - Root cause: Whisk API requires actual Imagen model identifiers, not reference codes
-  - Added configurable model selection via `whisk_image_model` in config.json
-  - Enhanced error logging with detailed API response information
-  
-- 🎨 **Feature**: Configurable Imagen Model Selection
-  - Users can now choose between "Imagen 3", "Imagen 4", "Imagen 3 Portrait", etc.
-  - "Imagen 4" offers better quality, 2K resolution, and improved aspect ratio support
-  - Configuration via `whisk_image_model` key in config.json or ~/.veo_image2video_cfg.json
-  
-- 📚 **Documentation**: Updated README with Whisk model configuration instructions
-
 ## [7.2.6] - 2025-11-10
 
 ### Removed - Code Cleanup

@@ -291,7 +291,6 @@ def run_image_recipe(
     workflow_id: str,
     session_id: str,
     aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT",
-    image_model: str = "Imagen 3",
     log_callback: Optional[Callable] = None
 ) -> Optional[bytes]:
     """
@@ -303,7 +302,6 @@ def run_image_recipe(
         workflow_id: Workflow UUID
         session_id: Session ID
         aspect_ratio: Aspect ratio (IMAGE_ASPECT_RATIO_PORTRAIT, IMAGE_ASPECT_RATIO_SQUARE, etc.)
-        image_model: Imagen model to use (e.g., "Imagen 3", "Imagen 4", "Imagen 3 Portrait")
         log_callback: Optional logging callback
         
     Returns:
@@ -332,8 +330,6 @@ def run_image_recipe(
         seed = random.randint(100000, 999999)
         
         # Correct payload structure matching Google Labs API
-        # NOTE: imageModel should be a valid Imagen model name, not "R2I"
-        # Valid values: "Imagen 3", "Imagen 4", "Imagen 3 Portrait", "Imagen 3 Landscape", etc.
         payload = {
             "clientContext": {
                 "workflowId": workflow_id,
@@ -342,7 +338,7 @@ def run_image_recipe(
             },
             "seed": seed,
             "imageModelSettings": {
-                "imageModel": image_model,  # Changed from "R2I" to valid model names
+                "imageModel": "R2I",
                 "aspectRatio": aspect_ratio
             },
             "userInstruction": prompt,
@@ -350,23 +346,12 @@ def run_image_recipe(
         }
         
         log("[INFO] Whisk: Running image recipe...")
-        log(f"[DEBUG] Payload: imageModel='{payload['imageModelSettings']['imageModel']}', aspectRatio='{payload['imageModelSettings']['aspectRatio']}'")
         
         response = requests.post(url, json=payload, headers=headers, timeout=120)
         
         if response.status_code != 200:
             log(f"[ERROR] Whisk recipe failed with status {response.status_code}")
-            log(f"[DEBUG] Response: {response.text[:500]}")
-            # Try to parse error details
-            try:
-                error_data = response.json()
-                if 'error' in error_data:
-                    error_info = error_data['error']
-                    log(f"[ERROR] Error code: {error_info.get('code', 'unknown')}")
-                    log(f"[ERROR] Error message: {error_info.get('message', 'unknown')}")
-                    log(f"[ERROR] Error status: {error_info.get('status', 'unknown')}")
-            except:
-                pass
+            log(f"[DEBUG] Response: {response.text[:200]}")
             return None
         
         data = response.json()
@@ -428,8 +413,7 @@ def run_image_recipe(
 
 
 def generate_image(prompt: str, model_image: Optional[str] = None, product_image: Optional[str] = None, 
-                   aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT", image_model: str = "Imagen 3", 
-                   debug_callback: Optional[Callable] = None) -> Optional[bytes]:
+                   aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT", debug_callback: Optional[Callable] = None) -> Optional[bytes]:
     """
     Generate image using Whisk with reference images
     
@@ -443,7 +427,6 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
         model_image: Path to model/character reference image
         product_image: Path to product reference image
         aspect_ratio: Aspect ratio (IMAGE_ASPECT_RATIO_PORTRAIT, IMAGE_ASPECT_RATIO_SQUARE, IMAGE_ASPECT_RATIO_LANDSCAPE)
-        image_model: Imagen model to use (default: "Imagen 3", also: "Imagen 4", "Imagen 3 Portrait", etc.)
         debug_callback: Callback for debug logging
         
     Returns:
@@ -521,12 +504,7 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
         log(f"[INFO] Whisk: Uploaded {len(recipe_media_inputs)} images successfully")
 
         # Step 3: Run image recipe with OAuth
-        # Allow model override from config
-        from services.core.config import load as load_cfg
-        cfg = load_cfg()
-        actual_model = cfg.get('whisk_image_model', image_model)
-        
-        log(f"[INFO] Whisk: Running image recipe with Bearer token (model: {actual_model})...")
+        log("[INFO] Whisk: Running image recipe with Bearer token...")
         
         result_image = run_image_recipe(
             prompt=prompt,
@@ -534,7 +512,6 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
             workflow_id=workflow_id,
             session_id=session_id,
             aspect_ratio=aspect_ratio,
-            image_model=actual_model,
             log_callback=log
         )
         

@@ -90,13 +90,7 @@ Whisk requires **two types of authentication** from labs.google.com:
    - OAuth token from API requests
    - Get from: DevTools → Network → Authorization header on https://labs.google/fx/tools/whisk
 
-3. **Image Model** (Optional - `whisk_image_model`):
-   - Specify which Imagen model to use (default: "Imagen 3")
-   - Options: "Imagen 3", "Imagen 4", "Imagen 3 Portrait", "Imagen 3 Landscape"
-   - "Imagen 4" offers better quality, 2K resolution, and improved aspect ratio support
-   - Example in config: `"whisk_image_model": "Imagen 4"`
-
-Both authentication tokens can be configured via **Settings → Whisk Authentication** in the UI.
+Both can be configured via **Settings → Whisk Authentication** in the UI.
 
 **📁 Where are tokens stored?**
 - See **[Token Storage Documentation](docs/TOKEN_STORAGE.md)** for complete details
