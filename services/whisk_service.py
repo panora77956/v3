@@ -505,13 +505,12 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
             media_id = upload_image_whisk(img_path, workflow_id, session_id, log)
 
             if media_id:
-                # FIXED: Include mediaCategory in recipeMediaInputs structure
-                # The API expects mediaInput with both mediaCategory and mediaGenerationId
-                # Correct structure: {"caption": "...", "mediaInput": {"mediaCategory": "...", "mediaGenerationId": "..."}}
+                # FIXED: Remove mediaCategory from recipeMediaInputs (causes 400 error)
+                # The API expects mediaInput with only mediaGenerationId (category was set during upload)
+                # Correct structure: {"caption": "...", "mediaInput": {"mediaGenerationId": "..."}}
                 recipe_media_inputs.append({
                     "caption": caption,
                     "mediaInput": {
-                        "mediaCategory": "MEDIA_CATEGORY_SUBJECT",
                         "mediaGenerationId": media_id
                     }
                 })
