@@ -1,6 +1,26 @@
 # -*- coding: utf-8 -*-
 import time, random, requests
 from typing import Dict, Any, Tuple
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry as UrllibRetry
+
+# Global session with connection pooling for better performance
+_session = None
+
+def _get_session():
+    """Get or create global session with connection pooling"""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        # Configure connection pooling
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=0  # We handle retries ourselves
+        )
+        _session.mount("http://", adapter)
+        _session.mount("https://", adapter)
+    return _session
 
 
 def _knob(name:str, default):
@@ -17,7 +37,7 @@ def _sleep(i:int):
 
 def request_json(method:str, url:str, *, headers:Dict[str,str]=None, params:Dict[str,Any]=None,
                  json_body:Any=None, data:Any=None, timeout=None) -> Tuple[bool, Any, str, int, Dict[str,str]]:
-    sess = requests.Session()
+    sess = _get_session()  # Use pooled session instead of creating new one
     max_attempts = int(_knob('max_attempts', 5))
     timeout = timeout or (_knob('conn_timeout', 15), _knob('read_timeout', 60))
     last_err, last_code, last_headers = "", 0, {}
