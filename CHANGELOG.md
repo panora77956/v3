@@ -2,6 +2,18 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
+## [7.2.8] - 2025-11-10
+
+### Fixed - Whisk API 400 Error
+- **Critical Fix**: Resolved Whisk API 400 "Request contains an invalid argument" error
+- Removed redundant `mediaCategory` field from `recipeMediaInputs` in recipe phase
+- The `mediaCategory` is already set during upload phase and shouldn't be repeated
+- **Root Cause**: API was rejecting payload with duplicate/invalid `mediaCategory` field
+- **Impact**: Whisk image generation should now work without 400 validation errors
+- **File Changed**: `services/whisk_service.py` (lines 507-517)
+- **Documentation**: Added `docs/WHISK_400_ERROR_FIX.md` with detailed analysis
+- **Testing**: All syntax checks, imports, and security scans passed
+
 ## [7.2.7] - 2025-11-10
 
 ### Fixed - Whisk API 500 Error
