@@ -363,6 +363,11 @@ def run_image_recipe(
                     error_info = error_data['error']
                     log(f"[ERROR] Error code: {error_info.get('code', 'unknown')}")
                     log(f"[ERROR] Error message: {error_info.get('message', 'unknown')}")
+                    # Log request details for debugging
+                    if error_info.get('code') == 500:
+                        log(f"[DEBUG] Request URL: {url}")
+                        log(f"[DEBUG] Request payload structure: {list(payload.keys())}")
+                        log(f"[DEBUG] Aspect ratio: {aspect_ratio}")
             except:
                 pass
             return None
