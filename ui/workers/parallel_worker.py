@@ -216,37 +216,31 @@ class ParallelSeqWorker(QObject):
             # Check if all threads are done
             all_done = all(not t.is_alive() for t in threads)
 
-            # Process queued updates
-            updates_processed = 0
-            while not self.results_queue.empty():
-                try:
-                    msg_type, job_idx, job = self.results_queue.get_nowait()
+            # Process queued updates (blocking with timeout for efficiency)
+            try:
+                # Use blocking get with timeout instead of busy-waiting
+                msg_type, job_idx, job = self.results_queue.get(timeout=0.2)
+                
+                if msg_type == "update":
+                    # Emit update to main thread
+                    self.row_update.emit(job_idx, job)
 
-                    if msg_type == "update":
-                        # Emit update to main thread
-                        self.row_update.emit(job_idx, job)
-
-                        # Update progress
-                        with self._lock:
-                            self.completed_jobs += 1
-                            progress_pct = int(self.completed_jobs * 100 / self.total_jobs)
-                            self.progress.emit(
-                                progress_pct,
-                                f"Đã gửi {self.completed_jobs}/{self.total_jobs} cảnh"
-                            )
-
-                        updates_processed += 1
-
-                except Exception as e:
-                    self.log.emit("ERR", f"Monitor error: {e}")
-                    break
+                    # Update progress
+                    with self._lock:
+                        self.completed_jobs += 1
+                        progress_pct = int(self.completed_jobs * 100 / self.total_jobs)
+                        self.progress.emit(
+                            progress_pct,
+                            f"Đã gửi {self.completed_jobs}/{self.total_jobs} cảnh"
+                        )
+                        
+            except:
+                # Queue empty or timeout - check if we're done
+                pass
 
             # If all threads done and queue empty, we're finished
             if all_done and self.results_queue.empty():
                 break
-
-            # Small sleep to avoid busy-waiting
-            time.sleep(0.1)
 
     def _run_sequential(self):
         """

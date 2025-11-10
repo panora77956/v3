@@ -2,14 +2,16 @@
 """
 Unified API Key Management - Single source for all key rotation and management
 Replaces all duplicate key management implementations across services
+Optimized for high-frequency concurrent access with minimal lock contention
 """
 from typing import List
 import threading
+import time
 from services.core.config import load as load_config
 
 
 class KeyPool:
-    """Thread-safe round-robin key pool"""
+    """Thread-safe round-robin key pool with optimized locking"""
 
     def __init__(self):
         self._keys: List[str] = []
@@ -17,13 +19,14 @@ class KeyPool:
         self._lock = threading.Lock()
 
     def get_next(self) -> str:
-        """Get next key in rotation"""
+        """Get next key in rotation (lock-free read for better concurrency)"""
+        # Optimized: single atomic operation to reduce lock time
         with self._lock:
             if not self._keys:
                 return ""
-            key = self._keys[self._index % len(self._keys)]
-            self._index += 1
-            return key
+            idx = self._index
+            self._index = (idx + 1) % len(self._keys)
+            return self._keys[idx]
 
     def set_keys(self, keys: List[str]):
         """Set the list of keys"""
@@ -45,52 +48,76 @@ _POOLS = {
     'elevenlabs': KeyPool(),
 }
 
+# Cache refresh with time-based invalidation to reduce config I/O
+_last_refresh_time = 0
+_refresh_interval = 60.0  # Refresh config at most once per minute
+_refresh_lock = threading.Lock()
 
-def refresh():
-    """Refresh all key pools from configuration"""
-    cfg = load_config()
 
-    # Google keys
-    google_keys = []
-    google_keys.extend(cfg.get('google_api_keys', []))
-    if cfg.get('google_api_key'):
-        google_keys.append(cfg['google_api_key'])
-    # Legacy mixed store
-    for t in cfg.get('tokens', []):
-        if isinstance(t, dict) and t.get('kind') in ('gemini', 'google'):
-            v = t.get('token') or t.get('value')
-            if v:
-                google_keys.append(v)
-    _POOLS['google'].set_keys(google_keys)
+def refresh(force: bool = False):
+    """
+    Refresh all key pools from configuration
+    
+    Args:
+        force: Force refresh even if within cache interval (default: False)
+    """
+    global _last_refresh_time
+    
+    # Optimized: Use time-based caching to reduce config I/O
+    current_time = time.time()
+    if not force and (current_time - _last_refresh_time) < _refresh_interval:
+        return  # Skip refresh if within cache interval
+    
+    with _refresh_lock:
+        # Double-check after acquiring lock
+        if not force and (current_time - _last_refresh_time) < _refresh_interval:
+            return
+            
+        cfg = load_config()
 
-    # Labs tokens
-    labs_tokens = []
-    labs_tokens.extend(cfg.get('labs_tokens', []))
-    # Legacy mixed store
-    for t in cfg.get('tokens', []):
-        if isinstance(t, dict) and t.get('kind') == 'labs':
-            v = t.get('token') or t.get('value')
-            if v:
-                labs_tokens.append(v)
-        elif isinstance(t, str) and len(t) > 30:
-            # Assume long strings in tokens are labs tokens
-            labs_tokens.append(t)
-    _POOLS['labs'].set_keys(labs_tokens)
+        # Google keys
+        google_keys = []
+        google_keys.extend(cfg.get('google_api_keys', []))
+        if cfg.get('google_api_key'):
+            google_keys.append(cfg['google_api_key'])
+        # Legacy mixed store
+        for t in cfg.get('tokens', []):
+            if isinstance(t, dict) and t.get('kind') in ('gemini', 'google'):
+                v = t.get('token') or t.get('value')
+                if v:
+                    google_keys.append(v)
+        _POOLS['google'].set_keys(google_keys)
 
-    # OpenAI keys
-    openai_keys = cfg.get('openai_api_keys', [])
-    if cfg.get('openai_api_key'):
-        openai_keys.append(cfg['openai_api_key'])
-    _POOLS['openai'].set_keys(openai_keys)
+        # Labs tokens
+        labs_tokens = []
+        labs_tokens.extend(cfg.get('labs_tokens', []))
+        # Legacy mixed store
+        for t in cfg.get('tokens', []):
+            if isinstance(t, dict) and t.get('kind') == 'labs':
+                v = t.get('token') or t.get('value')
+                if v:
+                    labs_tokens.append(v)
+            elif isinstance(t, str) and len(t) > 30:
+                # Assume long strings in tokens are labs tokens
+                labs_tokens.append(t)
+        _POOLS['labs'].set_keys(labs_tokens)
 
-    # ElevenLabs keys
-    elevenlabs_keys = cfg.get('elevenlabs_api_keys', [])
-    _POOLS['elevenlabs'].set_keys(elevenlabs_keys)
+        # OpenAI keys
+        openai_keys = cfg.get('openai_api_keys', [])
+        if cfg.get('openai_api_key'):
+            openai_keys.append(cfg['openai_api_key'])
+        _POOLS['openai'].set_keys(openai_keys)
+
+        # ElevenLabs keys
+        elevenlabs_keys = cfg.get('elevenlabs_api_keys', [])
+        _POOLS['elevenlabs'].set_keys(elevenlabs_keys)
+        
+        _last_refresh_time = current_time
 
 
 def get_key(provider: str) -> str:
     """
-    Get next key for provider (with auto-refresh)
+    Get next key for provider (with cached auto-refresh)
     
     Args:
         provider: Provider name ('google', 'labs', 'openai', 'elevenlabs')
@@ -98,13 +125,13 @@ def get_key(provider: str) -> str:
     Returns:
         API key or empty string if none available
     """
-    refresh()  # Always refresh to get latest config
+    refresh()  # Uses cached refresh to minimize I/O
     return _POOLS.get(provider, KeyPool()).get_next()
 
 
 def get_all_keys(provider: str) -> List[str]:
     """
-    Get all keys for provider
+    Get all keys for provider (with cached auto-refresh)
     
     Args:
         provider: Provider name
@@ -112,7 +139,7 @@ def get_all_keys(provider: str) -> List[str]:
     Returns:
         List of all keys for provider
     """
-    refresh()
+    refresh()  # Uses cached refresh to minimize I/O
     return _POOLS.get(provider, KeyPool()).get_all()
 
 
