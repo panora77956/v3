@@ -7,6 +7,7 @@ import requests
 import base64
 import time
 import uuid
+import json
 from typing import Optional, Callable
 
 
@@ -346,12 +347,25 @@ def run_image_recipe(
         }
         
         log("[INFO] Whisk: Running image recipe...")
+        log(f"[DEBUG] Payload keys: {list(payload.keys())}")
+        log(f"[DEBUG] Recipe inputs count: {len(recipe_media_inputs)}")
         
-        response = requests.post(url, json=payload, headers=headers, timeout=120)
+        # CRITICAL: Must use data= with json.dumps() and Content-Type: text/plain;charset=UTF-8
+        # Using json= parameter sets Content-Type: application/json which causes 500 error
+        response = requests.post(url, data=json.dumps(payload), headers=headers, timeout=120)
         
         if response.status_code != 200:
             log(f"[ERROR] Whisk recipe failed with status {response.status_code}")
-            log(f"[DEBUG] Response: {response.text[:200]}")
+            log(f"[DEBUG] Response: {response.text[:500]}")
+            # Try to parse error details
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    error_info = error_data['error']
+                    log(f"[ERROR] Error code: {error_info.get('code', 'unknown')}")
+                    log(f"[ERROR] Error message: {error_info.get('message', 'unknown')}")
+            except:
+                pass
             return None
         
         data = response.json()
