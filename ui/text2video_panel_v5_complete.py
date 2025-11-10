@@ -70,6 +70,7 @@ try:
         _LANGS,
         _Worker,
         build_prompt_json,
+        combine_scene_prompts_for_single_video,
         extract_location_context,
         get_model_key_from_display,
     )
@@ -1726,10 +1727,7 @@ class Text2VideoPanelV5(QWidget):
             self._append_log("[INFO] 🎬 Chế độ video đơn: Kết hợp tất cả cảnh thành 1 video...")
             self._append_log(f"[INFO] Đang kết hợp {len(scenes)} cảnh bằng Google Labs Flow API...")
             
-            # Import the combine function
             try:
-                from ui.text2video_panel_impl import combine_scene_prompts_for_single_video
-                
                 # Combine all scene prompts into one
                 scene_prompts = [scene["prompt"] for scene in scenes]
                 combined_prompt = combine_scene_prompts_for_single_video(scene_prompts, max_duration=30.0)
@@ -1839,6 +1837,29 @@ class Text2VideoPanelV5(QWidget):
                 os.makedirs(prj, exist_ok=True)
                 payload["dir_videos"] = os.path.join(prj, "03_Videos")
                 os.makedirs(payload["dir_videos"], exist_ok=True)
+
+        # Check if single combined video mode is enabled (same logic as main function)
+        if self.cb_stitch_videos.isChecked() and len(scenes) > 1:
+            self._append_log("[INFO] 🎬 Chế độ video đơn: Kết hợp tất cả cảnh thành 1 video...")
+            self._append_log(f"[INFO] Đang kết hợp {len(scenes)} cảnh bằng Google Labs Flow API...")
+            
+            try:
+                # Combine all scene prompts into one
+                scene_prompts = [scene["prompt"] for scene in scenes]
+                combined_prompt = combine_scene_prompts_for_single_video(scene_prompts, max_duration=30.0)
+                
+                # Replace multiple scenes with single combined scene
+                payload["scenes"] = [{
+                    "prompt": json.dumps(combined_prompt, ensure_ascii=False, indent=2),
+                    "aspect": scenes[0]["aspect"],  # Use aspect from first scene
+                    "actual_scene_num": 1
+                }]
+                
+                self._append_log(f"[INFO] ✅ Đã kết hợp {len(scenes)} cảnh thành 1 prompt duy nhất")
+                self._append_log("[INFO] Tạo 1 video thay vì nhiều video riêng lẻ")
+            except Exception as e:
+                self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
+                self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
 
         self._append_log("[INFO] Bắt đầu tạo video...")
         self._run_in_thread("video", payload)
