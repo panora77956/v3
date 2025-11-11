@@ -936,15 +936,16 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     from services.core.key_manager import get_all_keys
 
     # Auto-calculate timeout based on prompt length and complexity
-    # For long scenarios (480s+), LLM needs more time to generate comprehensive scripts
+    # OPTIMIZATION: Reduced timeout to match actual Gemini performance (~30-60s)
+    # User reports: Direct Gemini = 30s, but app was waiting 10+ minutes
     if timeout is None:
-        # Base timeout: 240s
-        # Add 60s for every 5000 characters beyond 10000
-        base_timeout = 240
+        # Base timeout: 60s (more realistic for Gemini 2.5 Flash)
+        # Add 10s for every 5000 characters beyond 10000
+        base_timeout = 60
         prompt_length = len(prompt)
         if prompt_length > 10000:
-            extra_time = ((prompt_length - 10000) // 5000) * 60
-            timeout = min(base_timeout + extra_time, 600)  # Cap at 10 minutes
+            extra_time = ((prompt_length - 10000) // 5000) * 10
+            timeout = min(base_timeout + extra_time, 120)  # Cap at 2 minutes (matches real performance)
         else:
             timeout = base_timeout
 
@@ -1012,10 +1013,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
                 # Last attempt - wrap in user-friendly error message
                 raise RuntimeError(
                     f"Gemini API request timed out after {timeout}s (tried {attempt+1} API keys). "
-                    f"This usually means the request is taking too long. "
-                    f"Suggestions: (1) Check your internet connection, "
-                    f"(2) Try reducing the complexity of your request, "
-                    f"(3) Try again later as the service may be experiencing high load."
+                    f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
+                    f"Suggestions: (1) Check your internet connection and firewall settings, "
+                    f"(2) Verify your API key is valid and not rate-limited, "
+                    f"(3) Try again in a few moments."
                 ) from e
 
         except Exception as e:
@@ -1029,10 +1030,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
             raise RuntimeError(
                 f"Gemini API request timed out after {timeout}s (tried {min(3, len(keys))} API keys). "
-                f"This usually means the request is taking too long. "
-                f"Suggestions: (1) Check your internet connection, "
-                f"(2) Try reducing the complexity of your request, "
-                f"(3) Try again later as the service may be experiencing high load."
+                f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
+                f"Suggestions: (1) Check your internet connection and firewall settings, "
+                f"(2) Verify your API key is valid and not rate-limited, "
+                f"(3) Try again in a few moments."
             ) from last_error
         else:
             # For other errors, use the generic message
@@ -1374,12 +1375,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         if not key: raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
         
         # OPTIMIZATION: More informative progress for long scenarios
+        # Updated to reflect actual Gemini performance (30-60s typically)
         if duration_seconds > 300:  # 5+ minutes
-            report_progress(f"Đang chờ phản hồi từ Gemini... (kịch bản {duration_seconds}s có thể mất 3-5 phút)", 25)
+            report_progress(f"Đang chờ phản hồi từ Gemini... (kịch bản {duration_seconds}s có thể mất 1-2 phút)", 25)
         elif duration_seconds > 120:  # 2+ minutes
-            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 2-3 phút)", 25)
+            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 30-60 giây)", 25)
         else:
-            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 1-2 phút)", 25)
+            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 20-40 giây)", 25)
         
         res=_call_gemini(prompt,key,"gemini-2.5-flash")
         report_progress("Đã nhận phản hồi từ Gemini", 50)
@@ -1388,12 +1390,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         if not key: raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
         
         # OPTIMIZATION: More informative progress for long scenarios
+        # Updated to reflect actual performance
         if duration_seconds > 300:
-            report_progress(f"Đang chờ phản hồi từ OpenAI... (kịch bản {duration_seconds}s có thể mất 3-5 phút)", 25)
+            report_progress(f"Đang chờ phản hồi từ OpenAI... (kịch bản {duration_seconds}s có thể mất 1-2 phút)", 25)
         elif duration_seconds > 120:
-            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 2-3 phút)", 25)
+            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 30-60 giây)", 25)
         else:
-            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 1-2 phút)", 25)
+            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 20-40 giây)", 25)
         
         # FIXED: Use gpt-4-turbo instead of gpt-5
         res=_call_openai(prompt,key,"gpt-4-turbo")
