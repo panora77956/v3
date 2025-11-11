@@ -339,10 +339,18 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 
 ## 📊 Phiên Bản / Version History
 
-### v7.2.4 (2025-11-10) - Vietnamese Text Overlay Fix
-- 🐛 **Fix**: Fixed Vietnamese text encoding issues in video overlays and thumbnails
+### v7.2.9 (2025-11-10) - Vietnamese Text Overlay Fix (Complete)
+- 🐛 **Critical Fix**: Resolved text overlays and scene descriptions appearing in generated videos
+- ✨ **Enhancement**: Enhanced negative prompts now always applied to ALL video generation requests
+- 🎯 **Solution**: 28 text avoidance negative prompts automatically added to every video generation
+- 🌏 **Impact**: Vietnamese text, English text, and scene descriptions no longer appear in videos
+- 📚 **Documentation**: Added comprehensive fix documentation in docs/VIETNAMESE_TEXT_OVERLAY_FIX_v7.2.5.md
+- ✅ **Testing**: All syntax, import, and security tests passed
+- 🔄 **Backward Compatible**: Existing code continues to work
+
+### v7.2.4 (2025-11-10) - Vietnamese Font Support
+- 🐛 **Fix**: Fixed Vietnamese text encoding issues in video thumbnails
 - ✨ **Enhancement**: Prioritize Roboto fonts with full Vietnamese diacritical mark support
-- 🎨 **Enhancement**: Strengthened negative prompts to prevent text overlays in videos (379 chars)
 - 🌏 **Localization**: All Vietnamese characters (á, à, ả, ã, ạ, ă, â, ê, ô, ơ, ư, đ) now render correctly
 - 📚 **Documentation**: Added comprehensive fix documentation in docs/VIETNAMESE_TEXT_FIX.md
 
@@ -413,6 +421,6 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 **Made with ❤️ by chamnv-dev**
 
-**Version:** 7.2.4
+**Version:** 7.2.9
 **Updated:** 2025-11-10
 **Status:** ✅ Production Ready & Secure

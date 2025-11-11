@@ -301,14 +301,15 @@ def _build_complete_prompt_text(prompt_data: Any) -> str:
     2. CHARACTER IDENTITY LOCK - Character consistency
     3. AUDIO REQUIREMENTS - Language and voiceover
     4. Scene content and other details
+    5. NEGATIVE PROMPTS - Always include enhanced text overlay avoidance
     """
-    # If already a string, return as-is (backward compatibility)
+    # If already a string, convert to dict to ensure negative prompts are added
     if isinstance(prompt_data, str):
-        return prompt_data
+        prompt_data = {"key_action": prompt_data}
 
-    # If not dict, convert to string
+    # If not dict, convert to string then to dict
     if not isinstance(prompt_data, dict):
-        return str(prompt_data)
+        prompt_data = {"key_action": str(prompt_data)}
 
     sections = []
 
@@ -839,8 +840,43 @@ def _build_complete_prompt_text(prompt_data: Any) -> str:
     # ═══════════════════════════════════════════════════════════════
     # SECTION 8: NEGATIVES (Enhanced with character & style consistency)
     # Triple Reinforcement #3: Add character and style consistency negatives
+    # CRITICAL FIX: Always include text overlay avoidance (Vietnamese text issue)
     # ═══════════════════════════════════════════════════════════════
     negatives = prompt_data.get("negatives", [])
+    
+    # CRITICAL: Always add enhanced text overlay avoidance
+    # Fix for: Vietnamese text overlays and scene descriptions appearing in videos
+    text_avoidance_negatives = [
+        "text overlays",
+        "on-screen text",
+        "burned-in text",
+        "hardcoded text",
+        "embedded text",
+        "words",
+        "letters",
+        "characters",
+        "typography",
+        "writing",
+        "script",
+        "subtitles",
+        "captions",
+        "titles",
+        "credits",
+        "labels",
+        "annotations",
+        "watermarks",
+        "logos",
+        "brands",
+        "signatures",
+        "stamps",
+        "Vietnamese text",
+        "English text",
+        "any language text",
+        "scene descriptions in text",
+        "character descriptions in text"
+    ]
+    # Prepend text avoidance for highest priority
+    negatives = text_avoidance_negatives + list(negatives)
     
     # Add character consistency negatives if characters are defined (Triple Reinforcement #3)
     if character_details:

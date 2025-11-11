@@ -2,6 +2,31 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
+## [7.2.9] - 2025-11-10
+
+### Fixed - Vietnamese Text Overlay Issue
+- **Critical Fix**: Resolved Vietnamese text overlays and scene descriptions appearing in generated videos
+- **Root Cause**: Enhanced negative prompts were defined but never added to API requests
+- **Solution**: Modified `_build_complete_prompt_text()` to always include text overlay avoidance
+- **Impact**: 
+  - Text overlays no longer appear in videos
+  - Vietnamese text specifically blocked from appearing
+  - Scene and character descriptions won't appear as burned-in text
+  - All prompts (strings and dicts) now get text avoidance protection
+- **Files Changed**: 
+  - `services/labs_flow_service.py` (lines 306-311, 847-877)
+  - `services/google/labs_flow_client.py` (lines 210-215, 481-511)
+- **Negative Prompts Added** (28 items):
+  - Text forms: "text overlays", "on-screen text", "burned-in text", "hardcoded text", "embedded text"
+  - Typography: "words", "letters", "characters", "typography", "writing", "script"
+  - Media text: "subtitles", "captions", "titles", "credits", "labels", "annotations"
+  - Branding: "watermarks", "logos", "brands", "signatures", "stamps"
+  - Language-specific: "Vietnamese text", "English text", "any language text"
+  - Scene prevention: "scene descriptions in text", "character descriptions in text"
+- **Documentation**: Added `docs/VIETNAMESE_TEXT_OVERLAY_FIX_v7.2.5.md` with detailed analysis
+- **Testing**: ✅ All syntax, import, and security tests passed
+- **Backward Compatible**: ✅ Existing code continues to work
+
 ## [7.2.8] - 2025-11-10
 
 ### Fixed - Whisk API 400 Error
