@@ -923,27 +923,6 @@ class Text2VideoPanelV5(QWidget):
         colR = QVBoxLayout()
         colR.setSpacing(8)
 
-        # CONSOLE (moved to right column)
-        lbl = QLabel("Nhật ký xử lý:")
-        lbl.setFont(FONT_H2)
-        colR.addWidget(lbl)
-
-        self.console = QTextEdit()
-        self.console.setReadOnly(True)
-        self.console.setMinimumHeight(120)
-        self.console.setMaximumHeight(150)
-        self.console.setFont(QFont("Courier New", 11))
-        self.console.setStyleSheet("""
-            QTextEdit {
-                background: #C8E6C9;
-                color: #1B5E20;
-                border: 2px solid #4CAF50;
-                border-radius: 6px;
-                padding: 8px;
-            }
-        """)
-        colR.addWidget(self.console, 0)
-
         # Hidden table
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1173,6 +1152,27 @@ class Text2VideoPanelV5(QWidget):
         """)
 
         colR.addWidget(self.result_tabs, 1)
+
+        # CONSOLE (Processing Log - at bottom of right column)
+        lbl = QLabel("Nhật ký xử lý:")
+        lbl.setFont(FONT_H2)
+        colR.addWidget(lbl)
+
+        self.console = QTextEdit()
+        self.console.setReadOnly(True)
+        self.console.setMinimumHeight(120)
+        self.console.setMaximumHeight(150)
+        self.console.setFont(QFont("Courier New", 11))
+        self.console.setStyleSheet("""
+            QTextEdit {
+                background: #C8E6C9;
+                color: #1B5E20;
+                border: 2px solid #4CAF50;
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        colR.addWidget(self.console, 0)
 
         root.addLayout(colL, 1)
         root.addLayout(colR, 2)
