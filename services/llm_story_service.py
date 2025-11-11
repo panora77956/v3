@@ -1009,8 +1009,14 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
                 time.sleep(backoff)
                 continue
             else:
-                # Last attempt - raise the timeout error
-                raise
+                # Last attempt - wrap in user-friendly error message
+                raise RuntimeError(
+                    f"Gemini API request timed out after {timeout}s (tried {attempt+1} API keys). "
+                    f"This usually means the request is taking too long. "
+                    f"Suggestions: (1) Check your internet connection, "
+                    f"(2) Try reducing the complexity of your request, "
+                    f"(3) Try again later as the service may be experiencing high load."
+                ) from e
 
         except Exception as e:
             # Non-HTTP, non-timeout errors - raise immediately
@@ -1019,7 +1025,18 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
 
     # All retries exhausted
     if last_error:
-        raise RuntimeError(f"Gemini API failed after {min(3, len(keys))} attempts: {last_error}")
+        # Check if it's a timeout error and provide helpful message
+        if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
+            raise RuntimeError(
+                f"Gemini API request timed out after {timeout}s (tried {min(3, len(keys))} API keys). "
+                f"This usually means the request is taking too long. "
+                f"Suggestions: (1) Check your internet connection, "
+                f"(2) Try reducing the complexity of your request, "
+                f"(3) Try again later as the service may be experiencing high load."
+            ) from last_error
+        else:
+            # For other errors, use the generic message
+            raise RuntimeError(f"Gemini API failed after {min(3, len(keys))} attempts: {last_error}") from last_error
     else:
         raise RuntimeError("Gemini API failed with unknown error")
 
