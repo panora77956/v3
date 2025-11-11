@@ -589,231 +589,57 @@ Bạn là **Biên kịch Đa năng AI Cao cấp**. Nhận **ý tưởng thô sơ
 Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của người dùng, giữ chân người xem từ giây đầu tiên."""
 
     # OPTIMIZATION: Use concise rules for long scenarios to speed up LLM processing
+    # FURTHER OPTIMIZATION: Drastically reduce prompt length for faster generation
     if is_long_scenario:
-        # Condensed version for 5+ minute videos - focuses on essentials only
+        # Ultra-condensed version for 5+ minute videos - essential rules only
         base_rules = f"""
 {base_role}
 
 {input_type_instruction}
-{language_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
 
 {style_guidance}
 
-═══════════════════════════════════════════════════════════════
-🎬 CORE PRINCIPLES (Optimized for long-form content)
-═══════════════════════════════════════════════════════════════
-1. **STRONG HOOK** (first 3s): Start with action/question/twist, not slow intro
-2. **EMOTIONAL VARIATION**: Each scene has clear emotion shift
-3. **PACING**: Add plot twist at midpoint, mini-hooks every 15-20s
-4. **VISUAL STORYTELLING**: Show action, not just dialogue
-5. **CHARACTER CONSISTENCY**: Keep visual_identity identical across all scenes
-
-═══════════════════════════════════════════════════════════════
-👤 CHARACTER BIBLE (2-4 characters)
-═══════════════════════════════════════════════════════════════
-Each character MUST have:
-- **key_trait**: Core personality (e.g., "Brave but impulsive")
-- **motivation**: Deep drive (e.g., "Prove self-worth")
-- **visual_identity**: DETAILED appearance (face, eyes, hair, clothing, accessories)
-  → NEVER change across scenes!
-- **goal**: What they want to achieve
-
-**CRITICAL**: In each scene prompt, REPEAT full visual_identity of appearing characters.
+**CORE RULES**:
+1. Strong hook (first 3s): action/question/twist
+2. Each scene: clear emotion + story beat
+3. Character visual_identity: NEVER change across scenes
+4. Scene prompts: Include full character descriptions
+5. Pacing: Plot twist at midpoint, mini-hooks every 15-20s
 """
     else:
-        # Full detailed version for shorter videos
+        # Optimized version for shorter videos - reduced verbosity for faster generation
         base_rules = f"""
 {base_role}
 
 {input_type_instruction}
-{language_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
 
 {style_guidance}
 
-═══════════════════════════════════════════════════════════════
-🎬 NGUYÊN TẮC HẤP DẪN TUYỆT ĐỐI
-═══════════════════════════════════════════════════════════════
+**KEY PRINCIPLES**:
+1. **HOOK** (first 3s): Dramatic action/shocking question/twist - NO slow intro
+2. **EMOTION**: Each scene has clear emotion shift (Tension→Relief, Joy→Sadness)
+3. **PACING**: {mode} format - Fast tempo for SHORT, plot twist at midpoint for LONG
+4. **VISUAL**: Specific actions, camera movements (zoom=tension, cuts=action), lighting mood
+5. **CINEMATIC**: Slow-mo, montage, POV shots, visual metaphors
 
-**1. HOOK SIÊU MẠNH (3 giây đầu):**
-- Bắt đầu bằng: Hành động kịch tính / Câu hỏi gây sốc / Twist bất ngờ / Cảnh dramatic
-- TUYỆT ĐỐI KHÔNG BẮT ĐẦU bằng giới thiệu chậm chạp, mở đầu nhàm chán
-- Ví dụ ĐÚNG: "Tôi vừa mất 10 triệu trong 3 phút..." / "Điều này thay đổi tất cả..."
-- Ví dụ SAI: "Xin chào mọi người hôm nay tôi sẽ kể..."
+**CHARACTER BIBLE** (2-4 characters):
+- key_trait: Core personality
+- motivation: Deep drive
+- visual_identity: Detailed appearance (face, eyes, hair, clothing, accessories) - NEVER changes
+- archetype, fatal_flaw, goals
 
-**2. EMOTIONAL ROLLERCOASTER:**
-- Mỗi cảnh phải có biến động cảm xúc rõ rệt: Tension → Relief → Surprise → Joy/Sadness
-- Tránh cảm xúc phẳng lặng, monotone
-- Sử dụng: Contrast mạnh (happy↔sad, hope↔despair, calm↔chaos)
+**CHARACTER CONSISTENCY (CRITICAL)**:
+- Scene prompts MUST include FULL visual_identity from character_bible
+- NEVER change appearance across scenes (face, hair, clothing, accessories)
+- Format: "[Name]: [full visual_identity], doing [action]"
 
-**3. PACING & RHYTHM:**
-- SHORT format: Tempo NHANH, mỗi cảnh 3-8s, chuyển cảnh dynamic
-- LONG format: Có điểm hồi hộp (plot twist) ở giữa (midpoint), không để người xem chán
-- Mỗi 15-20s phải có một "mini-hook" để giữ attention
-
-**4. VISUAL STORYTELLING:**
-- Mỗi scene PHẢI có hành động cụ thể, KHÔNG chỉ là talking heads
-- Camera movements tạo năng lượng: slow zoom-in (tension), quick cuts (action), tracking shot (journey)
-- Lighting mood: warm (cozy), cold blue (mystery), high contrast (drama)
-
-**5. CINEMATIC TECHNIQUES:**
-- Sử dụng: Slow motion (dramatic moments), Quick montage (time passage), POV shots (immersion)
-- Sound design hints: "silence breaks", "music swells", "sudden sound"
-- Visual metaphors: rain = sadness, sunrise = hope, shadows = mystery
-
-═══════════════════════════════════════════════════════════════
-👤 CHARACTER BIBLE (2–4 nhân vật sống động)
-═══════════════════════════════════════════════════════════════
-
-Mỗi nhân vật PHẢI:
-- **key_trait**: Tính cách cốt lõi nhất quán (ví dụ: "Dũng cảm nhưng bốc đồng", "Thông minh nhưng nghi ngờ")
-- **motivation**: Động lực sâu thẳm, thúc đẩy hành động (ví dụ: "Chứng minh bản thân", "Bảo vệ người thân")
-- **default_behavior**: Phản ứng tự nhiên khi stress (ví dụ: "Đùa cợt để giấu lo lắng", "Im lặng suy nghĩ")
-- **visual_identity**: Đặc điểm nhận diện CỰC KỲ CHI TIẾT (ví dụ: "Áo da đen, scar trên mặt, mắt xanh lá, tóc đen ngắn, râu ngắn", "Áo sơ mi trắng, kính mắt tròn, tóc nâu dài qua vai, không trang sức")
-  → MÔ TẢ ĐẦY ĐỦ: Mặt (hình dạng, màu da), mắt (màu, hình dạng), mũi, mồm, tai, tóc (màu, kiểu, độ dài), râu/ria mép (nếu có), quần áo (màu sắc, kiểu dáng cụ thể), phụ kiện (kính, đồng hồ, trang sức...), vũ khí (nếu có), chiều cao/vóc dáng
-  → TUYỆT ĐỐI KHÔNG thay đổi qua các cảnh!
-- **archetype**: Hero/Mentor/Trickster/Rebel (theo 12 archetypes)
-- **fatal_flaw**: Khuyết điểm dẫn đến conflict (ví dụ: "Quá tự tin", "Không tin người")
-- **goal_external**: Mục tiêu hữu hình (ví dụ: "Tìm kho báu", "Giải cứu ai đó")
-- **goal_internal**: Biến đổi nội tâm (ví dụ: "Học cách tin tưởng", "Chấp nhận quá khứ")
-
-**Đồng nhất tuyến:** Hành động = Hệ quả từ key_trait + motivation. Phát triển từ từ qua các Act.
-
-═══════════════════════════════════════════════════════════════
-🔒 NHẤT QUÁN NHÂN VẬT QUA CÁC CẢNH (CHARACTER CONSISTENCY)
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL - BẮT BUỘC:**
-
-Khi tạo prompt cho MỖI CẢNH, bạn PHẢI:
-
-1. **LẶP LẠI TOÀN BỘ visual_identity** của nhân vật xuất hiện trong cảnh đó
-   - Include trong "prompt_vi" và "prompt_tgt" của scene
-   - Không được lược bỏ bất kỳ chi tiết nào
-   - Format: "Nhân vật [Tên]: [FULL visual_identity từ character_bible], đang [action/emotion của scene]"
-
-2. **TUYỆT ĐỐI CẤM thay đổi:**
-   - ❌ Mặt, mắt, mũi, mồm, tai, hình dạng khuôn mặt
-   - ❌ Màu tóc, kiểu tóc, độ dài tóc
-   - ❌ Râu, ria mép (nếu có - không được thêm/bớt tùy tiện)
-   - ❌ Màu sắc quần áo, kiểu dáng trang phục
-   - ❌ Phụ kiện (kính, đồng hồ, trang sức...)
-   - ❌ Vũ khí (nếu có - phải giữ nguyên qua các cảnh)
-   - ❌ Vóc dáng, chiều cao, thể hình
-   - ❌ Giới tính, tuổi tác
-   - ❌ Giọng nói (phải consistent với character)
-
-3. **Ví dụ ĐÚNG:**
-   Scene 1 prompt: "John, 30 tuổi nam, áo sơ mi xanh navy, quần tây đen, mắt nâu, tóc đen ngắn gọn, kính gọng đen vuông, đeo đồng hồ bạc tay trái, đang đứng trong văn phòng..."
-   Scene 2 prompt: "John, 30 tuổi nam, áo sơ mi xanh navy, quần tây đen, mắt nâu, tóc đen ngắn gọn, kính gọng đen vuông, đeo đồng hồ bạc tay trái, đang ngồi uống cà phê..."
-   
-   ✓ TOÀN BỘ đặc điểm giữ nguyên, chỉ hành động thay đổi
-
-4. **Ví dụ SAI (KHÔNG ĐƯỢC LÀM):**
-   Scene 1: "John, áo sơ mi xanh, tóc đen, đeo kính..."
-   Scene 2: "John, áo polo trắng, tóc nâu..." ← ❌ Đã thay đổi quần áo và màu tóc!
-
-═══════════════════════════════════════════════════════════════
-🎞️ TÍNH LIÊN TỤC GIỮA CÁC CẢNH (SCENE CONTINUITY)
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL - BẮT BUỘC:**
-
-Để đảm bảo các cảnh có thể lắp ghép thành video hoàn chỉnh:
-
-1. **Liên kết nội dung:**
-   - Mỗi cảnh phải TIẾP NỐI logic với cảnh trước
-   - Nhân vật, địa điểm phải có sự chuyển tiếp hợp lý
-   - Action/emotion phải tiếp diễn theo chuỗi tự nhiên
-
-2. **Chuyển cảnh (Transitions):**
-   - Cảnh đầu: Thiết lập bối cảnh rõ ràng
-   - Các cảnh giữa: Kế thừa context từ cảnh trước
-   - Cảnh cuối: Kết thúc hợp lý với toàn bộ câu chuyện
-
-3. **Visual Notes PHẢI bao gồm:**
-   - Lighting continuity: Giữ ánh sáng nhất quán (cùng thời gian trong ngày)
-   - Location continuity: Nếu cùng địa điểm, props/background phải giống nhau
-   - Action continuity: Động tác/tư thế tiếp nối hợp lý
-
-**Ví dụ ĐÚNG:**
-Scene 1: "John đứng trước cửa nhà, mặt trời buổi sáng, chuẩn bị đi làm"
-Scene 2: "John đang lái xe trên đường, ánh sáng buổi sáng, trên đường đến văn phòng"
-Scene 3: "John bước vào văn phòng, ánh sáng trong nhà, bắt đầu ngày làm việc"
-
-**Ví dụ SAI:**
-Scene 1: "John ở nhà buổi sáng"
-Scene 2: "John ở công viên buổi tối" ← ❌ Nhảy cóc địa điểm và thời gian
-Scene 3: "John trong rừng buổi trưa" ← ❌ Không liên quan gì đến 2 cảnh trước
-
-═══════════════════════════════════════════════════════════════
-🎨 NHẤT QUÁN PHONG CÁCH (STYLE CONSISTENCY)  
-═══════════════════════════════════════════════════════════════
-
-**CRITICAL - BẮT BUỘC:**
-
-Toàn bộ video PHẢI giữ một phong cách thống nhất từ đầu đến cuối:
-
-1. **Visual Style:** 
-   - Nếu cảnh 1 là "{style_vi}" → TẤT CẢ các cảnh khác cũng phải "{style_vi}"
-   - KHÔNG được lẫn lộn: Cinematic ↔ Anime ↔ Documentary ↔ 3D
-   - Camera work, lighting, color grading phải nhất quán
-
-2. **Tone & Mood:**
-   - Serious/Dramatic → Giữ tone nghiêm túc xuyên suốt
-   - Comedy/Lighthearted → Giữ tone hài hước xuyên suốt
-   - KHÔNG chuyển đột ngột giữa các tone (trừ khi có mục đích rõ ràng)
-
-3. **Technical Consistency:**
-   - Camera angles: Giữ style quay nhất quán (documentary-style, cinematic, vlog)
-   - Color palette: Giữ bảng màu nhất quán qua các cảnh
-   - Aspect ratio: Không thay đổi tỷ lệ khung hình
-
-═══════════════════════════════════════════════════════════════
-
-═══════════════════════════════════════════════════════════════
-🎯 CẤU TRÚC THEO PHONG CÁCH
-═══════════════════════════════════════════════════════════════
-
-**SHORT** (≤7'): TikTok/Reels style - VIRAL FIRST
-- Act 1 (10%): Hook devastating trong 3s đầu + Setup nhanh
-- Act 2 (70%): Xung đột leo thang + Mini-twists liên tục + Emotion peaks
-- Act 3 (20%): Resolution + Twist cuối hoặc Call-to-action mạnh
-- Nhịp: FAST, dynamic, không thời gian chết
-
-**LONG** (>7'): YouTube/Cinematic - DEPTH & ENGAGEMENT
-- Act 1 (25%): Hook + World building + Character intro + Inciting incident
-- Act 2A (25%): Rising action + Complications + Emotional depth
-- **MIDPOINT (5%)**: Major revelation/twist thay đổi mọi thứ
-- Act 2B (25%): Pressure tăng + Darkest moment + Character growth
-- Act 3 (20%): Climax + Resolution + Satisfying ending + Message
-- Nhịp: Varied, có breathing room, nhưng luôn engaging
-
-═══════════════════════════════════════════════════════════════
-✨ YÊU CẦU ĐẶC BIỆT
-═══════════════════════════════════════════════════════════════
-
-1. **Scene Descriptions** phải VISUAL & SPECIFIC:
-   - ✗ SAI: "Nhân vật buồn trong phòng"
-   - ✓ ĐÚNG: "Close-up: Tears stream down face, backlit by window, rain outside, slow zoom in"
-
-2. **Dialogue** phải TỰ NHIÊN & IMPACTFUL:
-   - Tránh exposition dump
-   - Mỗi câu thoại phải reveal character hoặc advance plot
-   - Sử dụng subtext (ý nghĩa ẩn)
-
-3. **Visual Variety**:
-   - Alternate: Wide shots ↔ Close-ups
-   - Mix: Static shots + Camera movements
-   - Lighting: Thay đổi mood qua từng cảnh
-
-4. **Payoff Setup**:
-   - Foreshadowing sớm cho twist sau
-   - Chekhov's Gun: Detail đầu phải có ý nghĩa sau
-   - Callback: Reference lại moments trước
-
-═══════════════════════════════════════════════════════════════
-
-**NHỚ:** Mục tiêu cuối cùng = Người xem KHÔNG THỂ rời mắt + Muốn share + Cảm xúc mạnh sau khi xem
+**SCENE CONTINUITY**: Scenes connect logically (location, time, lighting consistent)
+**STYLE CONSISTENCY**: All scenes use "{style_vi}" style consistently
+**SCENE QUALITY**: Visual & specific descriptions, natural dialogue, varied shots, setup/payoff
 """.strip()
 
     schema = f"""
@@ -852,38 +678,18 @@ Trả về **JSON hợp lệ** theo schema EXACT (không thêm ký tự ngoài J
   ]
 }}
 
-**CHÚ Ý QUAN TRỌNG:** 
-- Cảnh 1 PHẢI là HOOK MẠNH (action/shocking/intriguing)
-- Prompts PHẢI visual & cinematic (tránh abstract)
-- Mỗi scene có emotion & story beat rõ ràng
-- **MỖI SCENE phải bao gồm TOÀN BỘ visual_identity của nhân vật (không lược bớt)**
-- **transition_from_previous: Mô tả cách scene này kết nối với scene trước (location, action, lighting)**
-- **style_notes: Ghi rõ các yếu tố {style_vi} trong scene này**
-- **QUAN TRỌNG: Kịch bản phải LIÊN QUAN TRỰC TIẾP đến ý tưởng người dùng cung cấp**
+**NOTE**: Scene 1=strong hook, prompts=visual & cinematic, include full character details in each scene
 """.strip()
 
     # Adjust input label based on detected type
     input_label = "Kịch bản chi tiết" if has_screenplay_markers else "Ý tưởng thô"
 
-    # Add idea adherence reminder
+    # Add idea adherence reminder (concise version)
     idea_adherence_reminder = ""
     if not has_screenplay_markers:
         idea_adherence_reminder = f"""
-⚠️ TUYỆT ĐỐI PHẢI ĐỌC KỸ YÊU CẦU NÀY:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Kịch bản BẮT BUỘC phải xây dựng dựa trên ý tưởng: "{idea}"
-
-- Nếu ý tưởng nhắc đến nhân vật cụ thể (ví dụ: "Bạch Tuyết", "Superman", "Jack") 
-  → Nhân vật ĐÓ phải xuất hiện trong kịch bản
-- Nếu ý tưởng nhắc đến địa điểm (ví dụ: "rừng", "Paris", "trường học") 
-  → Phải đặt câu chuyện ở địa điểm ĐÓ
-- Nếu ý tưởng nhắc đến sự kiện (ví dụ: "cưới", "du lịch", "thi đấu") 
-  → Sự kiện ĐÓ phải là trọng tâm câu chuyện
-- Nếu ý tưởng là câu chuyện cổ tích/nổi tiếng 
-  → Giữ nguyên cốt truyện chính, chỉ điều chỉnh cho phù hợp video format
-
-KHÔNG ĐƯỢC tự ý tạo câu chuyện hoàn toàn khác không liên quan!
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ CRITICAL: Script MUST be based on idea: "{idea}"
+Use mentioned characters/locations/events. Don't create unrelated stories.
 """
 
     return f"""{base_rules}
@@ -936,15 +742,16 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     from services.core.key_manager import get_all_keys
 
     # Auto-calculate timeout based on prompt length and complexity
-    # For long scenarios (480s+), LLM needs more time to generate comprehensive scripts
+    # OPTIMIZATION: Reduced timeout to match actual Gemini performance (~30-60s)
+    # User reports: Direct Gemini = 30s, but app was waiting 10+ minutes
     if timeout is None:
-        # Base timeout: 240s
-        # Add 60s for every 5000 characters beyond 10000
-        base_timeout = 240
+        # Base timeout: 60s (more realistic for Gemini 2.5 Flash)
+        # Add 10s for every 5000 characters beyond 10000
+        base_timeout = 60
         prompt_length = len(prompt)
         if prompt_length > 10000:
-            extra_time = ((prompt_length - 10000) // 5000) * 60
-            timeout = min(base_timeout + extra_time, 600)  # Cap at 10 minutes
+            extra_time = ((prompt_length - 10000) // 5000) * 10
+            timeout = min(base_timeout + extra_time, 120)  # Cap at 2 minutes (matches real performance)
         else:
             timeout = base_timeout
 
@@ -1012,10 +819,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
                 # Last attempt - wrap in user-friendly error message
                 raise RuntimeError(
                     f"Gemini API request timed out after {timeout}s (tried {attempt+1} API keys). "
-                    f"This usually means the request is taking too long. "
-                    f"Suggestions: (1) Check your internet connection, "
-                    f"(2) Try reducing the complexity of your request, "
-                    f"(3) Try again later as the service may be experiencing high load."
+                    f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
+                    f"Suggestions: (1) Check your internet connection and firewall settings, "
+                    f"(2) Verify your API key is valid and not rate-limited, "
+                    f"(3) Try again in a few moments."
                 ) from e
 
         except Exception as e:
@@ -1029,10 +836,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
             raise RuntimeError(
                 f"Gemini API request timed out after {timeout}s (tried {min(3, len(keys))} API keys). "
-                f"This usually means the request is taking too long. "
-                f"Suggestions: (1) Check your internet connection, "
-                f"(2) Try reducing the complexity of your request, "
-                f"(3) Try again later as the service may be experiencing high load."
+                f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
+                f"Suggestions: (1) Check your internet connection and firewall settings, "
+                f"(2) Verify your API key is valid and not rate-limited, "
+                f"(3) Try again in a few moments."
             ) from last_error
         else:
             # For other errors, use the generic message
@@ -1374,12 +1181,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         if not key: raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
         
         # OPTIMIZATION: More informative progress for long scenarios
+        # Updated to reflect actual Gemini performance (30-60s typically)
         if duration_seconds > 300:  # 5+ minutes
-            report_progress(f"Đang chờ phản hồi từ Gemini... (kịch bản {duration_seconds}s có thể mất 3-5 phút)", 25)
+            report_progress(f"Đang chờ phản hồi từ Gemini... (kịch bản {duration_seconds}s có thể mất 1-2 phút)", 25)
         elif duration_seconds > 120:  # 2+ minutes
-            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 2-3 phút)", 25)
+            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 30-60 giây)", 25)
         else:
-            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 1-2 phút)", 25)
+            report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 20-40 giây)", 25)
         
         res=_call_gemini(prompt,key,"gemini-2.5-flash")
         report_progress("Đã nhận phản hồi từ Gemini", 50)
@@ -1388,12 +1196,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         if not key: raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
         
         # OPTIMIZATION: More informative progress for long scenarios
+        # Updated to reflect actual performance
         if duration_seconds > 300:
-            report_progress(f"Đang chờ phản hồi từ OpenAI... (kịch bản {duration_seconds}s có thể mất 3-5 phút)", 25)
+            report_progress(f"Đang chờ phản hồi từ OpenAI... (kịch bản {duration_seconds}s có thể mất 1-2 phút)", 25)
         elif duration_seconds > 120:
-            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 2-3 phút)", 25)
+            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 30-60 giây)", 25)
         else:
-            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 1-2 phút)", 25)
+            report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 20-40 giây)", 25)
         
         # FIXED: Use gpt-4-turbo instead of gpt-5
         res=_call_openai(prompt,key,"gpt-4-turbo")
