@@ -949,8 +949,14 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
                 time.sleep(backoff)
                 continue
             else:
-                # Last attempt - raise the timeout error
-                raise
+                # Last attempt - wrap in user-friendly error message
+                raise RuntimeError(
+                    f"Gemini API request timed out after {240}s (tried {attempt+1} API keys). "
+                    f"This usually means the request is taking too long. "
+                    f"Suggestions: (1) Check your internet connection, "
+                    f"(2) Try reducing the complexity of your request, "
+                    f"(3) Try again later as the service may be experiencing high load."
+                ) from e
 
         except Exception as e:
             # Non-HTTP, non-timeout errors - raise immediately
