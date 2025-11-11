@@ -132,7 +132,7 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
                                  style: float = 0.5,
                                  api_key: Optional[str] = None) -> Optional[bytes]:
     """
-    Synthesize speech using ElevenLabs API
+    Synthesize speech using ElevenLabs API with API key rotation
     
     Args:
         text: Text to synthesize
@@ -140,25 +140,21 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
         stability: Voice stability (0.0 to 1.0)
         similarity_boost: Voice similarity boost (0.0 to 1.0)
         style: Style exaggeration (0.0 to 1.0)
-        api_key: Optional API key
+        api_key: Optional API key (if not provided, will rotate through config keys)
     
     Returns:
         Audio content as bytes (MP3 format), or None if failed
     """
-    # Get API key
-    if not api_key:
+    # Get API keys for rotation
+    if api_key:
+        keys = [api_key]
+    else:
         keys = _tokens_of(("elevenlabs",))
         if not keys:
-            logger.error("No ElevenLabs API key found")
+            logger.error("No ElevenLabs API key found in config")
             return None
-        api_key = keys[0]
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-
-    headers = {
-        "xi-api-key": api_key,
-        "Content-Type": "application/json"
-    }
 
     request_body = {
         "text": text,
@@ -171,21 +167,46 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
         }
     }
 
-    try:
-        logger.info(f"Synthesizing speech with ElevenLabs: voice={voice_id}")
-        response = requests.post(url, headers=headers, json=request_body, timeout=30)
-        response.raise_for_status()
+    # Try each API key in rotation
+    last_error = None
+    for i, key in enumerate(keys):
+        headers = {
+            "xi-api-key": key,
+            "Content-Type": "application/json"
+        }
 
-        audio_bytes = response.content
-        logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
-        return audio_bytes
+        try:
+            logger.info(f"Synthesizing speech with ElevenLabs (key {i+1}/{len(keys)}): voice={voice_id}")
+            response = requests.post(url, headers=headers, json=request_body, timeout=30)
+            response.raise_for_status()
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"ElevenLabs API request failed: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"ElevenLabs synthesis failed: {e}")
-        return None
+            audio_bytes = response.content
+            logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
+            return audio_bytes
+
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            # Check if it's a rate limit or auth error that might succeed with another key
+            if response.status_code in [401, 429]:
+                logger.warning(f"ElevenLabs API key {i+1} failed with {response.status_code}, trying next key...")
+                continue
+            else:
+                # Other HTTP errors - don't retry
+                logger.error(f"ElevenLabs API request failed with status {response.status_code}: {e}")
+                return None
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            logger.error(f"ElevenLabs API request failed: {e}")
+            # Don't retry on network errors
+            return None
+        except Exception as e:
+            last_error = e
+            logger.error(f"ElevenLabs synthesis failed: {e}")
+            return None
+
+    # All keys exhausted
+    logger.error(f"ElevenLabs API failed after trying {len(keys)} key(s): {last_error}")
+    return None
 
 
 def synthesize_speech_openai(text: str, voice: str = "alloy",

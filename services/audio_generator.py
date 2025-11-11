@@ -2,15 +2,54 @@
 """
 Audio Generation Helper
 Utilities to generate audio for video scenes
+Audio files are saved to project-specific Audio folder
 """
 import json
 import logging
+import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 from services.tts_service import generate_audio_from_scene
 
 logger = logging.getLogger(__name__)
+
+
+def get_project_audio_dir(project_name: str = None, base_dir: str = None) -> str:
+    """
+    Get the Audio directory for a project
+    
+    Args:
+        project_name: Project name (if not provided, returns base audio dir)
+        base_dir: Base directory for projects (if not provided, uses config)
+    
+    Returns:
+        Path to Audio directory
+    """
+    if not project_name:
+        # Return a default audio directory
+        return os.path.join(base_dir or ".", "Audio")
+    
+    try:
+        from services.sales_video_service import ensure_project_dirs
+        dirs = ensure_project_dirs(project_name, base_dir)
+        return str(dirs["audio"])
+    except Exception as e:
+        logger.warning(f"Could not get project audio dir: {e}, using fallback")
+        # Fallback: create Audio folder in project directory
+        from utils.config import load as load_config
+        config = load_config()
+        base = base_dir or config.get("download_root", ".")
+        
+        try:
+            from utils.filename_sanitizer import sanitize_project_name
+            sanitized_name = sanitize_project_name(project_name)
+        except ImportError:
+            sanitized_name = project_name
+        
+        audio_dir = os.path.join(base, sanitized_name, "Audio")
+        os.makedirs(audio_dir, exist_ok=True)
+        return audio_dir
 
 
 def generate_scene_audio(scene_data: Dict[str, Any], 
