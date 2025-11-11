@@ -517,6 +517,10 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None):
     # Get target language display name
     target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
 
+    # OPTIMIZATION: For long scenarios (>300s), use concise prompt to reduce LLM processing time
+    # Long prompts take longer for LLM to process, especially for 480s+ scenarios
+    is_long_scenario = sum(per) > 300  # True for 5+ minute videos
+
     # Get style-specific guidance with animal detection
     style_guidance = _get_style_specific_guidance(style_vi, idea=idea, topic=topic)
 
@@ -584,7 +588,41 @@ Mục tiêu: GIỮ NGUYÊN câu chuyện và nhân vật, chỉ tối ưu hóa c
 Bạn là **Biên kịch Đa năng AI Cao cấp**. Nhận **ý tưởng thô sơ** và phát triển thành **kịch bản phim/video SIÊU HẤP DẪN**.
 Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của người dùng, giữ chân người xem từ giây đầu tiên."""
 
-    base_rules = f"""
+    # OPTIMIZATION: Use concise rules for long scenarios to speed up LLM processing
+    if is_long_scenario:
+        # Condensed version for 5+ minute videos - focuses on essentials only
+        base_rules = f"""
+{base_role}
+
+{input_type_instruction}
+{language_instruction}
+
+{style_guidance}
+
+═══════════════════════════════════════════════════════════════
+🎬 CORE PRINCIPLES (Optimized for long-form content)
+═══════════════════════════════════════════════════════════════
+1. **STRONG HOOK** (first 3s): Start with action/question/twist, not slow intro
+2. **EMOTIONAL VARIATION**: Each scene has clear emotion shift
+3. **PACING**: Add plot twist at midpoint, mini-hooks every 15-20s
+4. **VISUAL STORYTELLING**: Show action, not just dialogue
+5. **CHARACTER CONSISTENCY**: Keep visual_identity identical across all scenes
+
+═══════════════════════════════════════════════════════════════
+👤 CHARACTER BIBLE (2-4 characters)
+═══════════════════════════════════════════════════════════════
+Each character MUST have:
+- **key_trait**: Core personality (e.g., "Brave but impulsive")
+- **motivation**: Deep drive (e.g., "Prove self-worth")
+- **visual_identity**: DETAILED appearance (face, eyes, hair, clothing, accessories)
+  → NEVER change across scenes!
+- **goal**: What they want to achieve
+
+**CRITICAL**: In each scene prompt, REPEAT full visual_identity of appearing characters.
+"""
+    else:
+        # Full detailed version for shorter videos
+        base_rules = f"""
 {base_role}
 
 {input_type_instruction}
