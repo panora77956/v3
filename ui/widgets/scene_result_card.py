@@ -84,17 +84,28 @@ class SceneResultCard(QFrame):
         lbl_title.setStyleSheet("color: #1976D2;")
         content_layout.addWidget(lbl_title)
 
-        # Description - Display full scene description (no truncation)
+        # Description - Display scene description separately from dialogue
         # Priority order:
-        #   1. prompt_video: Contains the complete structured video generation prompt
-        #   2. description: General description field
-        #   3. desc: Alternate description field (backward compatibility)
-        desc_text = self.scene_data.get('prompt_video', '') or self.scene_data.get('description', '') or self.scene_data.get('desc', '')
+        #   1. prompt_vi/prompt_tgt: Scene visual description
+        #   2. prompt_video: Contains the complete structured video generation prompt
+        #   3. description: General description field
+        #   4. desc: Alternate description field (backward compatibility)
+        desc_text = (self.scene_data.get('prompt_vi', '') or 
+                    self.scene_data.get('prompt_tgt', '') or
+                    self.scene_data.get('prompt_video', '') or 
+                    self.scene_data.get('description', '') or 
+                    self.scene_data.get('desc', ''))
         
         # If the description is very long (>500 chars), show first 500 chars with ellipsis
         # This allows full scene descriptions to be visible while preventing UI overflow
         if desc_text and len(desc_text) > 500:
             desc_text = desc_text[:500] + "..."
+        
+        # Add label for "Scene Description"
+        lbl_desc_header = QLabel("📝 Mô tả cảnh:")
+        lbl_desc_header.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        lbl_desc_header.setStyleSheet("color: #616161; border: none;")
+        content_layout.addWidget(lbl_desc_header)
         
         lbl_desc = QLabel(desc_text or "Không có mô tả")
         lbl_desc.setWordWrap(True)
@@ -102,16 +113,59 @@ class SceneResultCard(QFrame):
         lbl_desc.setStyleSheet("color: #424242; border: none;")  # Issue 5c: Remove border
         content_layout.addWidget(lbl_desc)
 
-        # Speech text (Lời thoại) - Issue 1: Set font size to 12px (smaller, secondary info)
-        speech_text = self.scene_data.get('speech', '') or self.scene_data.get('voice_over', '')
-        if speech_text:
-            if len(speech_text) > 100:
-                speech_text = speech_text[:100] + "..."
-            lbl_speech = QLabel(f"🎤 Lời thoại: {speech_text}")
-            lbl_speech.setWordWrap(True)
-            lbl_speech.setFont(QFont("Segoe UI", 12))
-            lbl_speech.setStyleSheet("color: #757575; border: none;")  # Issue 5c: Remove border
-            content_layout.addWidget(lbl_speech)
+        # Dialogues - Display each dialogue with speaker name (NEW: clearer formatting)
+        dialogues = self.scene_data.get('dialogues', [])
+        if dialogues:
+            # Add label for "Dialogue"
+            lbl_dialogue_header = QLabel("🎤 Lời thoại:")
+            lbl_dialogue_header.setFont(QFont("Segoe UI", 12, QFont.Bold))
+            lbl_dialogue_header.setStyleSheet("color: #616161; border: none;")
+            content_layout.addWidget(lbl_dialogue_header)
+            
+            # Display each dialogue
+            for dialogue in dialogues[:3]:  # Show up to 3 dialogues
+                if isinstance(dialogue, dict):
+                    speaker = dialogue.get('speaker', '')
+                    text_vi = dialogue.get('text_vi', '')
+                    text_tgt = dialogue.get('text_tgt', '')
+                    emotion = dialogue.get('emotion', '')
+                    
+                    # Use target language text if available, otherwise use Vietnamese
+                    dialogue_text = text_tgt or text_vi
+                    
+                    if dialogue_text:
+                        # Truncate if too long
+                        if len(dialogue_text) > 150:
+                            dialogue_text = dialogue_text[:150] + "..."
+                        
+                        # Format: Speaker: "Dialogue" (emotion)
+                        display_text = f'<b>{speaker}:</b> "{dialogue_text}"'
+                        if emotion:
+                            display_text += f' <i>({emotion})</i>'
+                        
+                        lbl_dialogue = QLabel(display_text)
+                        lbl_dialogue.setWordWrap(True)
+                        lbl_dialogue.setFont(QFont("Segoe UI", 12))
+                        lbl_dialogue.setStyleSheet("color: #616161; border: none; margin-left: 10px;")
+                        content_layout.addWidget(lbl_dialogue)
+        
+        # Fallback: Legacy speech text (for backward compatibility)
+        elif self.scene_data.get('speech') or self.scene_data.get('voice_over'):
+            speech_text = self.scene_data.get('speech', '') or self.scene_data.get('voice_over', '')
+            if speech_text:
+                if len(speech_text) > 150:
+                    speech_text = speech_text[:150] + "..."
+                
+                lbl_speech_header = QLabel("🎤 Lời thoại:")
+                lbl_speech_header.setFont(QFont("Segoe UI", 12, QFont.Bold))
+                lbl_speech_header.setStyleSheet("color: #616161; border: none;")
+                content_layout.addWidget(lbl_speech_header)
+                
+                lbl_speech = QLabel(speech_text)
+                lbl_speech.setWordWrap(True)
+                lbl_speech.setFont(QFont("Segoe UI", 12))
+                lbl_speech.setStyleSheet("color: #616161; border: none; margin-left: 10px;")
+                content_layout.addWidget(lbl_speech)
 
         # Action buttons
         buttons_layout = QHBoxLayout()

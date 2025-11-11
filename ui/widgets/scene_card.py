@@ -55,16 +55,56 @@ class SceneCard(QFrame):
         lbl_title.setStyleSheet("color: #1976D2;")
         content_layout.addWidget(lbl_title)
 
-        # Description
-        desc_text = self.scene_data.get('description', '') or self.scene_data.get('desc', '')
-        lbl_desc = QLabel(desc_text)
-        lbl_desc.setWordWrap(True)
-        lbl_desc.setFont(QFont("Segoe UI", 11))
-        lbl_desc.setStyleSheet("color: #424242; line-height: 1.5;")
-        content_layout.addWidget(lbl_desc)
+        # Scene Description (prompt_vi or description)
+        desc_text = (self.scene_data.get('prompt_vi', '') or 
+                    self.scene_data.get('prompt_tgt', '') or
+                    self.scene_data.get('description', '') or 
+                    self.scene_data.get('desc', ''))
+        
+        if desc_text:
+            # Truncate if too long
+            if len(desc_text) > 300:
+                desc_text = desc_text[:300] + "..."
+            
+            lbl_desc_header = QLabel("📝 Mô tả cảnh:")
+            lbl_desc_header.setFont(QFont("Segoe UI", 11, QFont.Bold))
+            lbl_desc_header.setStyleSheet("color: #616161;")
+            content_layout.addWidget(lbl_desc_header)
+            
+            lbl_desc = QLabel(desc_text)
+            lbl_desc.setWordWrap(True)
+            lbl_desc.setFont(QFont("Segoe UI", 11))
+            lbl_desc.setStyleSheet("color: #424242; line-height: 1.5; margin-left: 10px;")
+            content_layout.addWidget(lbl_desc)
+
+        # Dialogues - Display each dialogue with speaker
+        dialogues = self.scene_data.get('dialogues', [])
+        if dialogues:
+            lbl_dialogue_header = QLabel("🎤 Lời thoại:")
+            lbl_dialogue_header.setFont(QFont("Segoe UI", 11, QFont.Bold))
+            lbl_dialogue_header.setStyleSheet("color: #616161;")
+            content_layout.addWidget(lbl_dialogue_header)
+            
+            for dialogue in dialogues[:2]:  # Show up to 2 dialogues in card view
+                if isinstance(dialogue, dict):
+                    speaker = dialogue.get('speaker', '')
+                    text_vi = dialogue.get('text_vi', '')
+                    text_tgt = dialogue.get('text_tgt', '')
+                    
+                    dialogue_text = text_tgt or text_vi
+                    if dialogue_text:
+                        if len(dialogue_text) > 100:
+                            dialogue_text = dialogue_text[:100] + "..."
+                        
+                        display_text = f'<b>{speaker}:</b> "{dialogue_text}"'
+                        lbl_dialogue = QLabel(display_text)
+                        lbl_dialogue.setWordWrap(True)
+                        lbl_dialogue.setFont(QFont("Segoe UI", 10))
+                        lbl_dialogue.setStyleSheet("color: #616161; margin-left: 10px;")
+                        content_layout.addWidget(lbl_dialogue)
 
         # Collapsible prompt section
-        self.btn_toggle_prompt = QPushButton("▼ Hiển thị Prompt")
+        self.btn_toggle_prompt = QPushButton("▼ Hiển thị Prompt đầy đủ")
         self.btn_toggle_prompt.setFlat(True)
         self.btn_toggle_prompt.setStyleSheet("""
             QPushButton {
@@ -83,10 +123,29 @@ class SceneCard(QFrame):
         content_layout.addWidget(self.btn_toggle_prompt)
 
         self.txt_prompt = QTextEdit()
-        prompt_text = self.scene_data.get('voice_over', '') or self.scene_data.get('speech', '') or self.scene_data.get('prompt_image', '')
+        # Build full prompt text including description and dialogues
+        prompt_parts = []
+        if desc_text:
+            prompt_parts.append(f"Mô tả: {desc_text}")
+        if dialogues:
+            prompt_parts.append("\nLời thoại:")
+            for dialogue in dialogues:
+                if isinstance(dialogue, dict):
+                    speaker = dialogue.get('speaker', '')
+                    text = dialogue.get('text_tgt', '') or dialogue.get('text_vi', '')
+                    if text:
+                        prompt_parts.append(f"  {speaker}: {text}")
+        
+        # Fallback to legacy fields if no structured data
+        if not prompt_parts:
+            prompt_parts.append(self.scene_data.get('voice_over', '') or 
+                              self.scene_data.get('speech', '') or 
+                              self.scene_data.get('prompt_image', ''))
+        
+        prompt_text = '\n'.join(prompt_parts)
         self.txt_prompt.setPlainText(prompt_text)
         self.txt_prompt.setReadOnly(True)
-        self.txt_prompt.setMaximumHeight(80)
+        self.txt_prompt.setMaximumHeight(120)
         self.txt_prompt.setStyleSheet("""
             QTextEdit {
                 background: #F5F5F5;

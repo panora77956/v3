@@ -602,6 +602,7 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     # Priority: dialogues > scene description
     # This ensures the TTS speaks actual dialogue, not visual description
     vo_text = ""
+    dialogue_emotions = []  # Track emotions from dialogues for prosody adjustment
     if dialogues:
         # Extract dialogue text based on target language
         dialogue_texts = []
@@ -613,6 +614,12 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
                 text = dlg.get(text_field) or dlg.get(fallback_field) or ""
 
                 speaker = dlg.get("speaker", "")
+                emotion = dlg.get("emotion", "")
+                
+                # Track emotion for prosody adjustment
+                if emotion:
+                    dialogue_emotions.append(emotion)
+                
                 if speaker and text:
                     dialogue_texts.append(f"{speaker}: {text}")
                 elif text:
@@ -685,6 +692,7 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     # so if a voice_id is provided, it should already match the language
     voice_lang_validated = bool(voice_id and tts_provider)
 
+    # Enhanced: Include dialogue emotions for prosody adjustment
     voiceover_config = {
         "language": lang_code or "vi",
         "tts_provider": tts_provider or "google",
@@ -704,7 +712,9 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
             "expressiveness": expressiveness,
             "expressiveness_description": expressiveness_description
         },
-        "elevenlabs_settings": elevenlabs_settings
+        "elevenlabs_settings": elevenlabs_settings,
+        "dialogue_emotions": dialogue_emotions if dialogue_emotions else None,  # Track emotions from dialogues
+        "has_intonation": bool(dialogue_emotions or speaking_style != "neutral")  # Flag for intonation/context
     }
 
     # Part F: Build domain context

@@ -30,8 +30,28 @@ def _load_keys():
     return gk, ok
 
 def _n_scenes(total_seconds:int):
+    """
+    Calculate number of scenes and their durations.
+    
+    For videos >120s: Use exact formula n = duration // 8 (no rounding up)
+    For videos <=120s: Use original formula with rounding up
+    
+    Args:
+        total_seconds: Total video duration in seconds
+    
+    Returns:
+        tuple: (number_of_scenes, list_of_scene_durations)
+    """
     total=max(3, int(total_seconds or 30))
-    n=max(1, (total+7)//8)
+    
+    # For long videos (>120s), use exact division without rounding up
+    if total > 120:
+        n = max(1, total // 8)
+    else:
+        # For shorter videos, use original formula with rounding up
+        n = max(1, (total+7)//8)
+    
+    # Distribute duration: all scenes are 8s except the last one gets remainder
     per=[8]*(n-1)+[max(1,total-8*(n-1))]
     return n, per
 
