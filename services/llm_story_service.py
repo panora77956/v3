@@ -874,7 +874,7 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
     txt=r.json()["choices"][0]["message"]["content"]
     return parse_llm_response_safe(txt, "OpenAI")
 
-def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
+def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     """
     Call Gemini API with retry logic for 503 errors and timeouts
     
@@ -882,11 +882,30 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
     1. Try primary API key
     2. If 503 error or timeout, try up to 2 additional keys from config
     3. Add exponential backoff (1s, 2s, 4s)
+    
+    Args:
+        prompt: Text prompt for Gemini
+        api_key: Primary API key
+        model: Model name (default: gemini-2.5-flash)
+        timeout: Request timeout in seconds (default: auto-calculated from prompt length)
     """
     import time
 
     from services.core.api_config import gemini_text_endpoint
     from services.core.key_manager import get_all_keys
+
+    # Auto-calculate timeout based on prompt length and complexity
+    # For long scenarios (480s+), LLM needs more time to generate comprehensive scripts
+    if timeout is None:
+        # Base timeout: 240s
+        # Add 60s for every 5000 characters beyond 10000
+        base_timeout = 240
+        prompt_length = len(prompt)
+        if prompt_length > 10000:
+            extra_time = ((prompt_length - 10000) // 5000) * 60
+            timeout = min(base_timeout + extra_time, 600)  # Cap at 10 minutes
+        else:
+            timeout = base_timeout
 
     # Build key rotation list
     keys = [api_key]
@@ -907,8 +926,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
                 "generationConfig": {"temperature": 0.9, "response_mime_type": "application/json"}
             }
 
-            # Make request
-            r = requests.post(url, headers=headers, json=data, timeout=240)
+            # Make request with dynamic timeout
+            r = requests.post(url, headers=headers, json=data, timeout=timeout)
 
             # Check for 503 specifically
             if r.status_code == 503:
@@ -951,7 +970,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
             else:
                 # Last attempt - wrap in user-friendly error message
                 raise RuntimeError(
-                    f"Gemini API request timed out after {240}s (tried {attempt+1} API keys). "
+                    f"Gemini API request timed out after {timeout}s (tried {attempt+1} API keys). "
                     f"This usually means the request is taking too long. "
                     f"Suggestions: (1) Check your internet connection, "
                     f"(2) Try reducing the complexity of your request, "
@@ -968,7 +987,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
         # Check if it's a timeout error and provide helpful message
         if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
             raise RuntimeError(
-                f"Gemini API request timed out after {240}s (tried {min(3, len(keys))} API keys). "
+                f"Gemini API request timed out after {timeout}s (tried {min(3, len(keys))} API keys). "
                 f"This usually means the request is taking too long. "
                 f"Suggestions: (1) Check your internet connection, "
                 f"(2) Try reducing the complexity of your request, "
