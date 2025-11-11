@@ -841,6 +841,18 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
                 f"(2) Verify your API key is valid and not rate-limited, "
                 f"(3) Try again in a few moments."
             ) from last_error
+        # Check if it's a 503 error and provide helpful message
+        elif (isinstance(last_error, requests.exceptions.HTTPError) and 
+              ((hasattr(last_error, 'response') and last_error.response is not None and last_error.response.status_code == 503) or 
+               "503" in str(last_error))):
+            raise RuntimeError(
+                f"Gemini API service unavailable after {min(3, len(keys))} attempts (HTTP 503). "
+                f"This error indicates that Google's Gemini servers are temporarily overloaded or under maintenance. "
+                f"Suggestions: (1) Wait a few minutes and try again, "
+                f"(2) Try during off-peak hours for better availability, "
+                f"(3) Check Google's service status at https://status.cloud.google.com/, "
+                f"(4) Consider using a different model or API key if available."
+            ) from last_error
         else:
             # For other errors, use the generic message
             raise RuntimeError(f"Gemini API failed after {min(3, len(keys))} attempts: {last_error}") from last_error
