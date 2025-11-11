@@ -1380,7 +1380,9 @@ class VideoBanHangV5(QWidget):
         """Write script"""
         cfg = self._collect_cfg()
 
-        self._append_log("Bắt đầu tạo kịch bản...")
+        # Track script generation start time
+        self._script_generation_start_time = datetime.datetime.now()
+        self._append_log(f"⏱️ Bắt đầu tạo kịch bản: {self._script_generation_start_time.strftime('%H:%M:%S')}")
         self.btn_script.setEnabled(False)
         self.btn_script.setText("⏳ Đang tạo...")
         self.btn_stop.setEnabled(True)
@@ -1435,6 +1437,12 @@ class VideoBanHangV5(QWidget):
 
             self._append_log(f"✓ Kịch bản: {len(outline.get('scenes', []))} cảnh")
             self._append_log(f"✓ Social: {len(versions)} phiên bản")
+            
+            # Track script generation completion time
+            if hasattr(self, '_script_generation_start_time'):
+                script_end_time = datetime.datetime.now()
+                duration = (script_end_time - self._script_generation_start_time).total_seconds()
+                self._append_log(f"✅ Hoàn tất tạo kịch bản: {script_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
 
             self.btn_images.setEnabled(True)
 
@@ -1577,7 +1585,9 @@ class VideoBanHangV5(QWidget):
         use_whisk = cfg.get("image_model") == "Whisk"
         model_paths = cfg.get("model_paths", [])
 
-        self._append_log("Bắt đầu tạo ảnh...")
+        # Track image generation start time
+        self._image_generation_start_time = datetime.datetime.now()
+        self._append_log(f"⏱️ Bắt đầu tạo ảnh: {self._image_generation_start_time.strftime('%H:%M:%S')}")
         self.btn_images.setEnabled(False)
         self.btn_stop.setEnabled(True)
 
@@ -1644,7 +1654,13 @@ class VideoBanHangV5(QWidget):
     def _on_images_finished(self, success):
         """Images finished"""
         if success:
-            self._append_log("✓ Hoàn tất tạo ảnh")
+            # Track image generation completion time
+            if hasattr(self, '_image_generation_start_time'):
+                image_end_time = datetime.datetime.now()
+                duration = (image_end_time - self._image_generation_start_time).total_seconds()
+                self._append_log(f"✅ Hoàn tất tạo ảnh: {image_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
+            else:
+                self._append_log("✓ Hoàn tất tạo ảnh")
             self.btn_video.setEnabled(True)
         else:
             self._append_log("❌ Có lỗi khi tạo ảnh")

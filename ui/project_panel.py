@@ -674,6 +674,10 @@ class ProjectPanel(QWidget):
             from services.account_manager import get_account_manager
             account_mgr = get_account_manager()
 
+            # Track video creation start time
+            self._video_creation_start_time = datetime.datetime.now()
+            self.console.info(f"⏱️ Bắt đầu tạo video: {self._video_creation_start_time.strftime('%H:%M:%S')}")
+            
             # PR#4: Enable stop button when running
             self.btn_run.setEnabled(False); self.btn_run.setText("ĐANG TẠO…")
             self.btn_stop.setEnabled(True)
@@ -701,6 +705,13 @@ class ProjectPanel(QWidget):
             self._w.log.connect(lambda lv,msg: getattr(self.console, lv.lower())(msg) if hasattr(self.console, lv.lower()) else self.console.info(msg))
             def on_finish(_):
                 mode = "song song" if account_mgr.is_multi_account_enabled() else "tuần tự"
+                
+                # Track video creation completion time
+                if hasattr(self, '_video_creation_start_time'):
+                    video_end_time = datetime.datetime.now()
+                    duration = (video_end_time - self._video_creation_start_time).total_seconds()
+                    self.console.info(f"✅ Hoàn tất tạo video: {video_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
+                
                 self.console.info(f"Đã gửi xong theo {mode}.")
                 # PR#4: Disable stop button when done
                 self.btn_run.setEnabled(True); self.btn_run.setText("BẮT ĐẦU TẠO VIDEO")

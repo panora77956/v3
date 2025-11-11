@@ -11,6 +11,7 @@ Author: chamnv-dev
 Date: 2025-01-05
 """
 
+import datetime
 import json
 import os
 import re
@@ -1227,7 +1228,8 @@ class Text2VideoPanelV5(QWidget):
         self.setStyleSheet(groupbox_style)
 
     def _append_log(self, msg):
-        self.console.append(msg)
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        self.console.append(f"[{ts}] {msg}")
 
     def _toggle_char_ref_ui(self, state):
         """Toggle visibility of character reference image UI"""
@@ -1328,6 +1330,9 @@ class Text2VideoPanelV5(QWidget):
             style_seed=style_seed  # PR #8: Pass style seed for visual style consistency
         )
 
+        # Track start time
+        self._auto_generate_start_time = datetime.datetime.now()
+        self._append_log(f"[INFO] ⏱️ Bắt đầu tạo video tự động: {self._auto_generate_start_time.strftime('%H:%M:%S')}")
         self._append_log("[INFO] Bước 1/3: Sinh kịch bản...")
         self._run_in_thread("script", payload)
 
@@ -1583,6 +1588,12 @@ class Text2VideoPanelV5(QWidget):
                     self._append_log(f"[WARN] Could not save prompt: {e}")
 
         self._append_log("[INFO] Kịch bản đã hiển thị & lưu file.")
+        
+        # Track script generation completion time
+        if hasattr(self, '_auto_generate_start_time'):
+            script_end_time = datetime.datetime.now()
+            duration = (script_end_time - self._auto_generate_start_time).total_seconds()
+            self._append_log(f"[INFO] ✅ Hoàn tất sinh kịch bản: {script_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
 
         # Store script data and enable bible generation
         self._script_data = data
@@ -1745,7 +1756,9 @@ class Text2VideoPanelV5(QWidget):
                 self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
                 self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
 
-        self._append_log("[INFO] Bắt đầu tạo video...")
+        # Track video creation start time
+        self._video_creation_start_time = datetime.datetime.now()
+        self._append_log(f"[INFO] ⏱️ Bắt đầu tạo video: {self._video_creation_start_time.strftime('%H:%M:%S')}")
 
         # PR#7: Use background worker instead of blocking thread
         self._start_video_generation_worker(payload)
@@ -1907,6 +1920,18 @@ class Text2VideoPanelV5(QWidget):
         """PR#7: Handle all scenes completion"""
         self.progress_label.setText(f"✅ All scenes completed! ({len(video_paths)} videos)")
         self.progress_bar.setValue(100)
+        
+        # Track video completion time
+        if hasattr(self, '_video_creation_start_time'):
+            video_end_time = datetime.datetime.now()
+            duration = (video_end_time - self._video_creation_start_time).total_seconds()
+            self._append_log(f"[INFO] ✅ Hoàn tất tạo video: {video_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
+        
+        # Track total time if auto-generate was used
+        if hasattr(self, '_auto_generate_start_time'):
+            total_end_time = datetime.datetime.now()
+            total_duration = (total_end_time - self._auto_generate_start_time).total_seconds()
+            self._append_log(f"[INFO] ✅ Tổng thời gian tạo video tự động: {int(total_duration//60)}m {int(total_duration%60)}s")
         
         self._append_log(f"[INFO] ✅ Video generation complete: {len(video_paths)} videos generated")
         
