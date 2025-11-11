@@ -755,14 +755,21 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         else:
             timeout = base_timeout
 
-    # Build key rotation list
+    # Build key rotation list - try ALL available keys for 503 errors
     keys = [api_key]
     all_keys = get_all_keys('google')
     keys.extend([k for k in all_keys if k != api_key])
+    
+    # For 503 errors, we want to try all keys since it's a server issue, not key issue
+    # Try all available keys (no artificial limit) - user configured them for redundancy
+    # If they have many keys, it increases chances of finding a working server
+    max_keys = len(keys)
+    
+    print(f"[INFO] Gemini API: Found {len(keys)} keys, will try all {max_keys} keys if needed")
 
     last_error = None
 
-    for attempt, key in enumerate(keys[:3]):  # Try up to 3 keys
+    for attempt, key in enumerate(keys[:max_keys]):
         try:
             # Build endpoint
             url = gemini_text_endpoint(key) if model == "gemini-2.5-flash" else \
@@ -779,11 +786,13 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
 
             # Check for 503 specifically
             if r.status_code == 503:
-                last_error = requests.HTTPError(f"503 Service Unavailable (Key attempt {attempt+1})", response=r)
-                if attempt < 2:  # Don't sleep on last attempt
-                    backoff = 2 ** attempt  # 1s, 2s, 4s
-                    print(f"[WARN] Gemini 503 error, retrying in {backoff}s with next key...")
+                last_error = requests.HTTPError(f"503 Service Unavailable (Key attempt {attempt+1}/{max_keys})", response=r)
+                if attempt < max_keys - 1:  # Don't sleep on last attempt
+                    backoff = min(2 ** attempt, 8)  # 1s, 2s, 4s, 8s max
+                    print(f"[WARN] Gemini 503 error, retrying in {backoff}s with next key (attempt {attempt+2}/{max_keys})...")
                     time.sleep(backoff)
+                else:
+                    print(f"[ERROR] Gemini 503 error on final attempt ({attempt+1}/{max_keys})")
                 continue  # Try next key
 
             # Raise for other HTTP errors
@@ -798,9 +807,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
             # Only retry 503 errors
             if hasattr(e, 'response') and e.response.status_code == 503:
                 last_error = e
-                if attempt < 2:
-                    backoff = 2 ** attempt
-                    print(f"[WARN] HTTP 503, trying key {attempt+2}/{min(3, len(keys))} in {backoff}s...")
+                if attempt < max_keys - 1:
+                    backoff = min(2 ** attempt, 8)
+                    print(f"[WARN] HTTP 503, trying key {attempt+2}/{max_keys} in {backoff}s...")
                     time.sleep(backoff)
                 continue
             else:
@@ -810,15 +819,15 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
             # Retry timeout errors with next key
             last_error = e
-            if attempt < 2:
-                backoff = 2 ** attempt
-                print(f"[WARN] Request timeout, trying key {attempt+2}/{min(3, len(keys))} in {backoff}s...")
+            if attempt < max_keys - 1:
+                backoff = min(2 ** attempt, 8)
+                print(f"[WARN] Request timeout, trying key {attempt+2}/{max_keys} in {backoff}s...")
                 time.sleep(backoff)
                 continue
             else:
                 # Last attempt - wrap in user-friendly error message
                 raise RuntimeError(
-                    f"Gemini API request timed out after {timeout}s (tried {attempt+1} API keys). "
+                    f"Gemini API request timed out after {timeout}s (tried {max_keys} API keys). "
                     f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
                     f"Suggestions: (1) Check your internet connection and firewall settings, "
                     f"(2) Verify your API key is valid and not rate-limited, "
@@ -835,7 +844,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         # Check if it's a timeout error and provide helpful message
         if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
             raise RuntimeError(
-                f"Gemini API request timed out after {timeout}s (tried {min(3, len(keys))} API keys). "
+                f"Gemini API request timed out after {timeout}s (tried {max_keys} API keys). "
                 f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
                 f"Suggestions: (1) Check your internet connection and firewall settings, "
                 f"(2) Verify your API key is valid and not rate-limited, "
@@ -846,16 +855,17 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
               ((hasattr(last_error, 'response') and last_error.response is not None and last_error.response.status_code == 503) or 
                "503" in str(last_error))):
             raise RuntimeError(
-                f"Gemini API service unavailable after {min(3, len(keys))} attempts (HTTP 503). "
+                f"Gemini API service unavailable after {max_keys} attempts (HTTP 503). "
                 f"This error indicates that Google's Gemini servers are temporarily overloaded or under maintenance. "
                 f"Suggestions: (1) Wait a few minutes and try again, "
                 f"(2) Try during off-peak hours for better availability, "
                 f"(3) Check Google's service status at https://status.cloud.google.com/, "
-                f"(4) Consider using a different model or API key if available."
+                f"(4) Consider using a different model or API key if available, "
+                f"(5) Verify you have multiple API keys configured for automatic rotation."
             ) from last_error
         else:
             # For other errors, use the generic message
-            raise RuntimeError(f"Gemini API failed after {min(3, len(keys))} attempts: {last_error}") from last_error
+            raise RuntimeError(f"Gemini API failed after {max_keys} attempts: {last_error}") from last_error
     else:
         raise RuntimeError("Gemini API failed with unknown error")
 
