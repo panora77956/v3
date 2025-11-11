@@ -761,10 +761,11 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     keys.extend([k for k in all_keys if k != api_key])
     
     # For 503 errors, we want to try all keys since it's a server issue, not key issue
-    # Limit to max 5 keys to prevent excessive retries
-    max_keys = min(len(keys), 5)
+    # Try all available keys (no artificial limit) - user configured them for redundancy
+    # If they have many keys, it increases chances of finding a working server
+    max_keys = len(keys)
     
-    print(f"[INFO] Gemini API: Found {len(keys)} keys, will try up to {max_keys} keys if needed")
+    print(f"[INFO] Gemini API: Found {len(keys)} keys, will try all {max_keys} keys if needed")
 
     last_error = None
 
