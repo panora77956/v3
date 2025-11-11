@@ -412,11 +412,39 @@ def build_outline(cfg:Dict[str,Any])->Dict[str,Any]:
     for sc in scenes:
         struct = (((sc or {}).get("prompt",{}) or {}).get("Output_Format",{}) or {}).get("Structure",{}) or {}
         img_prompt = _build_image_prompt(struct, visualStyleString)
+        
+        # Extract dialogues from the voiceover and structure
+        voiceover = sc.get("voiceover", "")
+        dialogues = []
+        if voiceover:
+            # Create a dialogue entry from voiceover
+            # Extract emotion tags if present (e.g., [vui vẻ], [hào hứng])
+            emotion = ""
+            import re
+            emotion_match = re.search(r'\[([^\]]+)\]', voiceover)
+            if emotion_match:
+                emotion = emotion_match.group(1)
+            
+            # Get text from structure for more detailed dialogue info
+            text_vi = struct.get("original_language_dialogue", voiceover)
+            text_tgt = struct.get("dialogue_or_voiceover", "")
+            
+            # Remove emotion tags from text for clean display
+            text_vi_clean = re.sub(r'\[[^\]]+\]', '', text_vi).strip()
+            
+            dialogues.append({
+                "speaker": "Người kể",  # Default speaker name
+                "text_vi": text_vi_clean,
+                "text_tgt": text_tgt,
+                "emotion": emotion
+            })
+        
         outline_scenes.append({
             "index": sc.get("scene"),
             "title": f"Cảnh {sc.get('scene')}",
             "desc": sc.get("description",""),
             "speech": sc.get("voiceover",""),
+            "dialogues": dialogues,  # Add dialogues field
             "emotion": struct.get("emotion", ""),
             "duration": float(cfg.get("duration_sec", 32)) / sceneCount,
             "prompt_video": json.dumps(sc.get("prompt",{}), ensure_ascii=False),

@@ -1769,6 +1769,9 @@ class VideoBanHangV5(QWidget):
             return
 
         self._append_log(f"🎬 Bắt đầu tạo video cho cảnh {scene_idx}...")
+        
+        # Generate audio for this scene first
+        self._generate_scene_audio(scene_idx, target_scene, cfg)
 
         # Get video prompt
         video_prompt = target_scene.get("prompt_video", "")
@@ -1857,6 +1860,62 @@ class VideoBanHangV5(QWidget):
         self._append_log(f"🔁 Tạo lại video cho cảnh {scene_idx}...")
         # Reuse the same logic as initial video generation
         self._on_scene_generate_video(scene_idx)
+
+    def _generate_scene_audio(self, scene_idx, scene_data, cfg):
+        """Generate audio file for a scene"""
+        try:
+            # Import audio generation service
+            from services.audio_generator import generate_scene_audio
+            
+            # Get project name and audio directory
+            project_name = cfg.get("project_name", "default")
+            if svc:
+                dirs = svc.ensure_project_dirs(project_name)
+                audio_dir = str(dirs["audio"])
+            else:
+                sanitized_name = sanitize_project_name(project_name)
+                audio_dir = str(Path.home() / "Downloads" / sanitized_name / "Audio")
+                Path(audio_dir).mkdir(parents=True, exist_ok=True)
+            
+            self._append_log(f"🎤 Bắt đầu tạo audio cho cảnh {scene_idx}...")
+            
+            # Prepare scene data for audio generation
+            # Extract voiceover/speech from scene
+            speech_text = scene_data.get("speech", "")
+            
+            # Get dialogues if available
+            dialogues = scene_data.get("dialogues", [])
+            if dialogues and len(dialogues) > 0:
+                # Use first dialogue's text
+                speech_text = dialogues[0].get("text_vi", speech_text)
+            
+            if not speech_text:
+                self._append_log(f"⚠️ Cảnh {scene_idx} không có lời thoại, bỏ qua tạo audio")
+                return
+            
+            # Build audio scene data
+            audio_scene_data = {
+                "scene_index": scene_idx,
+                "audio": {
+                    "voiceover": {
+                        "tts_provider": cfg.get("tts_provider", "google"),
+                        "voice_id": cfg.get("voice_id", "vi-VN-Wavenet-A"),
+                        "language": cfg.get("speech_lang", "vi"),
+                        "text": speech_text
+                    }
+                }
+            }
+            
+            # Generate audio
+            audio_path = generate_scene_audio(audio_scene_data, audio_dir, scene_idx)
+            
+            if audio_path:
+                self._append_log(f"✓ Đã tạo audio cho cảnh {scene_idx}: {audio_path}")
+            else:
+                self._append_log(f"❌ Không thể tạo audio cho cảnh {scene_idx}")
+                
+        except Exception as e:
+            self._append_log(f"❌ Lỗi khi tạo audio cảnh {scene_idx}: {e}")
 
     def stop_processing(self):
         """Stop all workers"""
