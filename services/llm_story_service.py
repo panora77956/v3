@@ -876,11 +876,11 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
 
 def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
     """
-    Call Gemini API with retry logic for 503 errors
+    Call Gemini API with retry logic for 503 errors and timeouts
     
     Strategy:
     1. Try primary API key
-    2. If 503 error, try up to 2 additional keys from config
+    2. If 503 error or timeout, try up to 2 additional keys from config
     3. Add exponential backoff (1s, 2s, 4s)
     """
     import time
@@ -940,8 +940,20 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash"):
                 # Other HTTP errors (429, 400, 401, etc.) - raise immediately
                 raise
 
+        except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            # Retry timeout errors with next key
+            last_error = e
+            if attempt < 2:
+                backoff = 2 ** attempt
+                print(f"[WARN] Request timeout, trying key {attempt+2}/{min(3, len(keys))} in {backoff}s...")
+                time.sleep(backoff)
+                continue
+            else:
+                # Last attempt - raise the timeout error
+                raise
+
         except Exception as e:
-            # Non-HTTP errors - raise immediately
+            # Non-HTTP, non-timeout errors - raise immediately
             last_error = e
             raise
 
