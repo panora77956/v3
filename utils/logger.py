@@ -1,4 +1,5 @@
 
+import datetime
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit
 
 class Console(QWidget):
@@ -8,7 +9,8 @@ class Console(QWidget):
         self.view = QTextEdit(); self.view.setReadOnly(True)
         v.addWidget(self.view)
     def _w(self, lvl, msg):
-        self.view.append(f"[{lvl}] {msg}")
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        self.view.append(f"[{ts}] [{lvl}] {msg}")
     def info(self, msg): self._w("INFO", msg)
     def warn(self, msg): self._w("WARN", msg)
     def err(self, msg):  self._w("ERR", msg)
