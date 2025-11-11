@@ -466,37 +466,43 @@ class Text2VideoPanelV5(QWidget):
         """)
         project_layout.addWidget(self.ed_idea)
 
-        # Domain/Topic
-        row_d = QHBoxLayout()
+        # Expert label
+        lbl = QLabel("Bạn là chuyên gia trong:")
+        lbl.setFont(FONT_H2)
+        project_layout.addWidget(lbl)
+
+        # Domain/Topic in one row
+        row_dt = QHBoxLayout()
         lbl = QLabel("Lĩnh vực:")
         lbl.setFont(FONT_H2)
-        row_d.addWidget(lbl)
+        row_dt.addWidget(lbl)
         self.cb_domain = QComboBox()
         self.cb_domain.setMinimumHeight(32)
         self.cb_domain.addItem("(Không chọn)", "")
         if get_all_domains:
             for domain in get_all_domains():
                 self.cb_domain.addItem(domain, domain)
-        row_d.addWidget(self.cb_domain, 1)
-        project_layout.addLayout(row_d)
-
-        row_t = QHBoxLayout()
+        row_dt.addWidget(self.cb_domain, 1)
+        
+        row_dt.addSpacing(12)
         lbl = QLabel("Chủ đề:")
         lbl.setFont(FONT_H2)
-        row_t.addWidget(lbl)
+        row_dt.addWidget(lbl)
         self.cb_topic = QComboBox()
         self.cb_topic.setMinimumHeight(32)
         self.cb_topic.addItem("(Chọn lĩnh vực để load chủ đề)", "")
         self.cb_topic.setEnabled(False)
-        row_t.addWidget(self.cb_topic, 1)
-        project_layout.addLayout(row_t)
+        row_dt.addWidget(self.cb_topic, 1)
+        project_layout.addLayout(row_dt)
 
         colL.addWidget(project_group)
 
-        # VIDEO SETTINGS
-        video_group = CollapsibleGroupBox("⚙️ Cài đặt video")
+        # VIDEO SETTINGS - Always visible
+        video_group = QGroupBox("⚙️ Cài đặt video")
         video_group.setFont(FONT_H2)
-        video_layout = video_group.content_layout()
+        video_layout = QVBoxLayout(video_group)
+        video_layout.setContentsMargins(10, 15, 10, 8)
+        video_layout.setSpacing(6)
 
         # Row 1: Style + Model
         row1 = QHBoxLayout()
@@ -612,18 +618,21 @@ class Text2VideoPanelV5(QWidget):
         row3.addWidget(self.cb_out_lang, 1)
         video_layout.addLayout(row3)
 
-        # Row 4: Upscale
+        # Row 4: Upscale and Single Video in one row
+        row4 = QHBoxLayout()
         self.cb_upscale = QCheckBox("Up Scale 4K")
-        video_layout.addWidget(self.cb_upscale)
-
-        # Row 4.5: Single Video Generation (Optional)
-        self.cb_stitch_videos = QCheckBox("🎬 Tạo video đơn kết hợp tất cả cảnh (Single Combined Video)")
+        row4.addWidget(self.cb_upscale)
+        
+        row4.addSpacing(12)
+        self.cb_stitch_videos = QCheckBox("🎬 Tạo video đơn kết hợp tất cả các cảnh")
         self.cb_stitch_videos.setFont(QFont("Segoe UI", 12))
         self.cb_stitch_videos.setToolTip(
             "Tạo 1 video duy nhất với tất cả cảnh kết hợp bằng Google Labs Flow (tối đa 30s)\n"
             "Thay thế việc tạo nhiều video và nối bằng FFmpeg"
         )
-        video_layout.addWidget(self.cb_stitch_videos)
+        row4.addWidget(self.cb_stitch_videos)
+        row4.addStretch()
+        video_layout.addLayout(row4)
 
         # Row 5: Character Reference Images
         self.cb_use_char_ref = QCheckBox("📸 Sử dụng ảnh tham chiếu nhân vật (Character Reference)")
@@ -636,14 +645,7 @@ class Text2VideoPanelV5(QWidget):
         char_ref_layout = QVBoxLayout(self.char_ref_container)
         char_ref_layout.setContentsMargins(20, 5, 0, 5)
         
-        # Info label
-        info_lbl = QLabel("💡 Mỗi ảnh tương ứng với 1 nhân vật. Chọn nhiều ảnh nếu có nhiều nhân vật.")
-        info_lbl.setFont(QFont("Segoe UI", 10))
-        info_lbl.setStyleSheet("color: #666;")
-        info_lbl.setWordWrap(True)
-        char_ref_layout.addWidget(info_lbl)
-        
-        # Button and list container
+        # Button container
         btn_layout = QHBoxLayout()
         self.btn_add_char_ref = QPushButton("➕ Thêm ảnh nhân vật")
         self.btn_add_char_ref.setMinimumHeight(32)
@@ -657,17 +659,28 @@ class Text2VideoPanelV5(QWidget):
         btn_layout.addStretch()
         char_ref_layout.addLayout(btn_layout)
         
-        # List widget to show selected images
-        self.list_char_ref_images = QListWidget()
-        self.list_char_ref_images.setMaximumHeight(120)
-        self.list_char_ref_images.setStyleSheet("""
-            QListWidget {
+        # Scrollable thumbnail container
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setMaximumHeight(100)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 background: #f9f9f9;
             }
         """)
-        char_ref_layout.addWidget(self.list_char_ref_images)
+        
+        scroll_container = QWidget()
+        self.char_ref_thumb_container = QHBoxLayout(scroll_container)
+        self.char_ref_thumb_container.setSpacing(4)
+        self.char_ref_thumb_container.setContentsMargins(4, 4, 4, 4)
+        self.char_ref_thumb_container.addStretch()
+        
+        scroll_area.setWidget(scroll_container)
+        char_ref_layout.addWidget(scroll_area)
         
         video_layout.addWidget(self.char_ref_container)
         self.char_ref_container.setVisible(False)  # Hidden by default
@@ -908,10 +921,14 @@ class Text2VideoPanelV5(QWidget):
         """)
         colL.addWidget(self.progress_bar)
 
-        # CONSOLE
-        lbl = QLabel("Console:")
+        # === RIGHT COLUMN (2/3) ===
+        colR = QVBoxLayout()
+        colR.setSpacing(8)
+
+        # CONSOLE (moved to right column)
+        lbl = QLabel("Nhật ký xử lý:")
         lbl.setFont(FONT_H2)
-        colL.addWidget(lbl)
+        colR.addWidget(lbl)
 
         self.console = QTextEdit()
         self.console.setReadOnly(True)
@@ -927,11 +944,7 @@ class Text2VideoPanelV5(QWidget):
                 padding: 8px;
             }
         """)
-        colL.addWidget(self.console, 0)
-
-        # === RIGHT COLUMN (2/3) ===
-        colR = QVBoxLayout()
-        colR.setSpacing(8)
+        colR.addWidget(self.console, 0)
 
         # Hidden table
         self.table = QTableWidget(0, 6)
@@ -1251,21 +1264,54 @@ class Text2VideoPanelV5(QWidget):
             for path in file_paths:
                 if path not in self._character_ref_images:
                     self._character_ref_images.append(path)
-                    # Add to list widget
-                    import os
-                    filename = os.path.basename(path)
-                    item = QListWidgetItem(f"🖼️ {filename}")
-                    item.setData(Qt.UserRole, path)  # Store full path
-                    item.setToolTip(path)  # Show full path on hover
-                    self.list_char_ref_images.addItem(item)
             
+            self._refresh_character_ref_thumbnails()
             self._append_log(f"[INFO] Đã thêm {len(file_paths)} ảnh tham chiếu nhân vật")
 
     def _clear_character_reference_images(self):
         """Clear all character reference images"""
         self._character_ref_images.clear()
-        self.list_char_ref_images.clear()
+        self._refresh_character_ref_thumbnails()
         self._append_log("[INFO] Đã xóa tất cả ảnh tham chiếu nhân vật")
+
+    def _refresh_character_ref_thumbnails(self):
+        """Refresh character reference thumbnails"""
+        # Clear existing thumbnails
+        while self.char_ref_thumb_container.count() > 1:  # Keep the stretch
+            item = self.char_ref_thumb_container.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # Add thumbnails for each image
+        THUMBNAIL_SIZE = 72
+        max_show = 10
+        for i, path in enumerate(self._character_ref_images[:max_show]):
+            thumb = QLabel()
+            thumb.setFixedSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+            thumb.setScaledContents(True)
+            thumb.setStyleSheet("border: 1px solid #ddd; border-radius: 4px;")
+            
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                thumb.setPixmap(pixmap.scaled(
+                    THUMBNAIL_SIZE, THUMBNAIL_SIZE,
+                    Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+            else:
+                thumb.setText("❌")
+                thumb.setAlignment(Qt.AlignCenter)
+            
+            thumb.setToolTip(path)
+            self.char_ref_thumb_container.insertWidget(i, thumb)
+        
+        # Show count if more images exist
+        if len(self._character_ref_images) > max_show:
+            extra = QLabel()
+            extra.setFixedSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+            extra.setText(f"+{len(self._character_ref_images) - max_show}")
+            extra.setAlignment(Qt.AlignCenter)
+            extra.setStyleSheet("border: 1px solid #ddd; border-radius: 4px; font-weight: bold;")
+            self.char_ref_thumb_container.insertWidget(max_show, extra)
 
     # === CONTINUE IN NEXT PART (methods from original) ===
     # Methods: stop_processing, _on_auto_generate, _run_in_thread,
