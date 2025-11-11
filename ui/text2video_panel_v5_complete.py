@@ -70,6 +70,7 @@ try:
         _LANGS,
         _Worker,
         build_prompt_json,
+        combine_scene_prompts_for_single_video,
         extract_location_context,
         get_model_key_from_display,
     )
@@ -78,7 +79,7 @@ try:
     from ui.widgets.history_widget import HistoryWidget  # History tab widget
     from utils import config as cfg
     from utils.filename_sanitizer import sanitize_project_name
-    from utils.video_utils import stitch_videos, check_ffmpeg_available
+    # Note: stitch_videos removed - now using Google Labs Flow for combined videos
 except ImportError as e:
     print(f"⚠️ Import warning: {e}")
     cfg = None
@@ -614,10 +615,13 @@ class Text2VideoPanelV5(QWidget):
         self.cb_upscale = QCheckBox("Up Scale 4K")
         video_layout.addWidget(self.cb_upscale)
 
-        # Row 4.5: Video Stitching (Optional)
-        self.cb_stitch_videos = QCheckBox("🎬 Nối các video cảnh lại với nhau (Video Stitching)")
+        # Row 4.5: Single Video Generation (Optional)
+        self.cb_stitch_videos = QCheckBox("🎬 Tạo video đơn kết hợp tất cả cảnh (Single Combined Video)")
         self.cb_stitch_videos.setFont(QFont("Segoe UI", 12))
-        self.cb_stitch_videos.setToolTip("Nối tất cả video cảnh thành 1 video duy nhất (tối đa 30s)")
+        self.cb_stitch_videos.setToolTip(
+            "Tạo 1 video duy nhất với tất cả cảnh kết hợp bằng Google Labs Flow (tối đa 30s)\n"
+            "Thay thế việc tạo nhiều video và nối bằng FFmpeg"
+        )
         video_layout.addWidget(self.cb_stitch_videos)
 
         # Row 5: Character Reference Images
@@ -1718,6 +1722,29 @@ class Text2VideoPanelV5(QWidget):
                 payload["dir_videos"] = os.path.join(prj, "03_Videos")
                 os.makedirs(payload["dir_videos"], exist_ok=True)
 
+        # Check if single combined video mode is enabled
+        if self.cb_stitch_videos.isChecked() and len(scenes) > 1:
+            self._append_log("[INFO] 🎬 Chế độ video đơn: Kết hợp tất cả cảnh thành 1 video...")
+            self._append_log(f"[INFO] Đang kết hợp {len(scenes)} cảnh bằng Google Labs Flow API...")
+            
+            try:
+                # Combine all scene prompts into one
+                scene_prompts = [scene["prompt"] for scene in scenes]
+                combined_prompt = combine_scene_prompts_for_single_video(scene_prompts, max_duration=30.0)
+                
+                # Replace multiple scenes with single combined scene
+                payload["scenes"] = [{
+                    "prompt": json.dumps(combined_prompt, ensure_ascii=False, indent=2),
+                    "aspect": scenes[0]["aspect"],  # Use aspect from first scene
+                    "actual_scene_num": 1
+                }]
+                
+                self._append_log(f"[INFO] ✅ Đã kết hợp {len(scenes)} cảnh thành 1 prompt duy nhất")
+                self._append_log("[INFO] Tạo 1 video thay vì nhiều video riêng lẻ")
+            except Exception as e:
+                self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
+                self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
+
         self._append_log("[INFO] Bắt đầu tạo video...")
 
         # PR#7: Use background worker instead of blocking thread
@@ -1811,6 +1838,29 @@ class Text2VideoPanelV5(QWidget):
                 payload["dir_videos"] = os.path.join(prj, "03_Videos")
                 os.makedirs(payload["dir_videos"], exist_ok=True)
 
+        # Check if single combined video mode is enabled (same logic as main function)
+        if self.cb_stitch_videos.isChecked() and len(scenes) > 1:
+            self._append_log("[INFO] 🎬 Chế độ video đơn: Kết hợp tất cả cảnh thành 1 video...")
+            self._append_log(f"[INFO] Đang kết hợp {len(scenes)} cảnh bằng Google Labs Flow API...")
+            
+            try:
+                # Combine all scene prompts into one
+                scene_prompts = [scene["prompt"] for scene in scenes]
+                combined_prompt = combine_scene_prompts_for_single_video(scene_prompts, max_duration=30.0)
+                
+                # Replace multiple scenes with single combined scene
+                payload["scenes"] = [{
+                    "prompt": json.dumps(combined_prompt, ensure_ascii=False, indent=2),
+                    "aspect": scenes[0]["aspect"],  # Use aspect from first scene
+                    "actual_scene_num": 1
+                }]
+                
+                self._append_log(f"[INFO] ✅ Đã kết hợp {len(scenes)} cảnh thành 1 prompt duy nhất")
+                self._append_log("[INFO] Tạo 1 video thay vì nhiều video riêng lẻ")
+            except Exception as e:
+                self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
+                self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
+
         self._append_log("[INFO] Bắt đầu tạo video...")
         self._run_in_thread("video", payload)
 
@@ -1860,39 +1910,14 @@ class Text2VideoPanelV5(QWidget):
         
         self._append_log(f"[INFO] ✅ Video generation complete: {len(video_paths)} videos generated")
         
-        # Check if video stitching is enabled
-        if self.cb_stitch_videos.isChecked() and len(video_paths) > 1:
-            self._append_log(f"[INFO] 🎬 Stitching {len(video_paths)} videos together...")
-            self.progress_label.setText(f"🎬 Stitching {len(video_paths)} videos...")
-            
-            try:
-                # Create output filename based on project title
-                project_dir = os.path.dirname(video_paths[0])
-                output_filename = f"{self._title}_stitched.mp4"
-                output_path = os.path.join(project_dir, output_filename)
-                
-                # Perform stitching
-                success = stitch_videos(
-                    video_paths=video_paths,
-                    output_path=output_path,
-                    max_duration=30.0,
-                    log_callback=self._append_log
-                )
-                
-                if success:
-                    self._append_log(f"[SUCCESS] ✅ Videos stitched successfully!")
-                    self._append_log(f"[INFO] 📁 Output: {output_filename}")
-                    self.progress_label.setText(f"✅ All done! Stitched video saved: {output_filename}")
-                else:
-                    self._append_log(f"[WARN] ⚠️ Video stitching skipped (only 1 video or failed)")
-                    self.progress_label.setText(f"✅ All scenes completed! ({len(video_paths)} videos)")
-                    
-            except Exception as e:
-                self._append_log(f"[ERROR] ❌ Video stitching failed: {str(e)}")
-                self.progress_label.setText(f"⚠️ Stitching failed, but {len(video_paths)} videos saved")
-        else:
-            if self.cb_stitch_videos.isChecked():
-                self._append_log(f"[INFO] ℹ️ Video stitching skipped (only 1 video)")
+        # Note: If single combined video mode was used, we already have one video
+        # No FFmpeg stitching is needed or performed
+        if self.cb_stitch_videos.isChecked():
+            if len(video_paths) == 1:
+                self._append_log(f"[INFO] ✅ Single combined video generated using Google Labs Flow")
+                self._append_log(f"[INFO] 📁 Output: {os.path.basename(video_paths[0])}")
+            else:
+                self._append_log(f"[INFO] ℹ️ Note: Multiple videos generated (combined mode was not applied)")
         
         self.progress_bar.setVisible(False)
         self.cancel_video_button.setVisible(False)
