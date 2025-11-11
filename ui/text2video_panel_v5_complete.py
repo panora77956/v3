@@ -690,11 +690,9 @@ class Text2VideoPanelV5(QWidget):
 
         colL.addWidget(video_group)
 
-        # VOICE SETTINGS
+        # VOICE SETTINGS - Collapsible
         voice_group = CollapsibleGroupBox("🎙️ Cài đặt voice")
         voice_group.setFont(FONT_H2)
-        video_group._accordion_group = voice_group
-        voice_group._accordion_group = video_group
         voice_layout = voice_group.content_layout()
 
         # Row 1: Provider + Voice
