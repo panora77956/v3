@@ -4,15 +4,42 @@ KeyList V2 - Fixed Version
 - Proper spacing (no huge gaps)
 - Highlighted input fields
 - Better visual hierarchy
+- API key validation integration
 """
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QPushButton, QListWidget, QListWidgetItem,
-    QFileDialog, QMessageBox
+    QFileDialog, QMessageBox, QApplication
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
+
+
+class KeyValidationWorker(QThread):
+    """Worker thread for validating API keys without blocking UI"""
+    result = pyqtSignal(int, bool, str)  # (index, is_valid, message)
+    finished_all = pyqtSignal()
+    
+    def __init__(self, kind, keys):
+        super().__init__()
+        self.kind = kind
+        self.keys = keys
+        
+    def run(self):
+        """Validate all keys and emit results"""
+        try:
+            from services.key_check_service import check
+            for i, key in enumerate(self.keys):
+                is_valid, message = check(self.kind, key)
+                self.result.emit(i, is_valid, message)
+        except Exception as e:
+            # If import fails, emit error for all keys
+            for i in range(len(self.keys)):
+                self.result.emit(i, False, f"Validation error: {str(e)}")
+        finally:
+            self.finished_all.emit()
+
 
 class KeyListV2(QWidget):
     """Improved KeyList with compact layout and prominent inputs"""
@@ -21,6 +48,7 @@ class KeyListV2(QWidget):
         super().__init__(parent)
         self.kind = kind
         self.keys = initial or []
+        self.validation_status = {}  # Store validation results {key: (is_valid, message)}
         self._build_ui()
 
     def _build_ui(self):
@@ -152,13 +180,27 @@ class KeyListV2(QWidget):
         item_layout = QHBoxLayout(item_widget)
         item_layout.setContentsMargins(6, 4, 6, 4)
         item_layout.setSpacing(8)  # ONLY 8px - not huge gap
+        
+        # Status indicator (initially grey, will be updated on validation)
+        status_label = QLabel("●")
+        status_label.setFont(QFont("Segoe UI", 16))
+        status_label.setToolTip("Not validated yet")
+        # Store status label for later updates
+        status_label.setObjectName(f"status_{len(self.keys)}")
+        status_label.setStyleSheet("color: #9E9E9E; padding: 2px;")  # Grey = unknown
+        item_layout.addWidget(status_label)
 
         # Key text (monospace, selectable)
         key_label = QLabel(self._truncate_key(key_text))
         key_label.setFont(QFont("Courier New", 11))
         key_label.setStyleSheet("color: #424242; padding: 4px;")
         key_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        key_label.setToolTip(key_text)  # Full key on hover
+        # Enhanced tooltip with validation status
+        tooltip = key_text
+        if key_text in self.validation_status:
+            is_valid, msg = self.validation_status[key_text]
+            tooltip += f"\n\nStatus: {'✅ Valid' if is_valid else '❌ Invalid'}\n{msg}"
+        key_label.setToolTip(tooltip)
         item_layout.addWidget(key_label, 1)  # stretch=1 takes remaining space
 
         # Check button - RIGHT NEXT to text (NO gap)
@@ -168,7 +210,7 @@ class KeyListV2(QWidget):
         btn_check.setToolTip("Validate this key")
         btn_check.setCursor(Qt.PointingHandCursor)
         btn_check.setFont(QFont("Segoe UI", 14))
-        btn_check.clicked.connect(lambda: self._validate_key(key_text))
+        btn_check.clicked.connect(lambda: self._validate_single_key(key_text))
         item_layout.addWidget(btn_check)
 
         # Delete button - RIGHT NEXT to check button
@@ -239,17 +281,113 @@ class KeyListV2(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", f"Error: {str(e)}")
 
-    def _validate_key(self, key):
-        """Validate single key (placeholder)"""
-        QMessageBox.information(self, "Validate", f"Validating key: {self._truncate_key(key)}\n\n(Validation logic not implemented)")
+    def _validate_single_key(self, key):
+        """Validate a single API key"""
+        try:
+            from services.key_check_service import check
+            
+            # Disable validate button during check
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            
+            # Find the index of this key
+            if key not in self.keys:
+                QMessageBox.warning(self, "Error", "Key not found!")
+                return
+                
+            key_index = self.keys.index(key)
+            
+            # Perform validation
+            is_valid, message = check(self.kind, key)
+            
+            # Store result
+            self.validation_status[key] = (is_valid, message)
+            
+            # Update UI
+            self._update_key_status(key_index, is_valid, message)
+            
+            # Show result
+            status = "✅ Valid" if is_valid else "❌ Invalid"
+            QMessageBox.information(
+                self, 
+                "Validation Result",
+                f"Key: {self._truncate_key(key)}\n\nStatus: {status}\n\n{message}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Validation Error", f"Failed to validate key:\n{str(e)}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
     def _validate_all(self):
-        """Validate all keys (placeholder)"""
+        """Validate all keys using background worker"""
         if not self.keys:
             QMessageBox.warning(self, "No Keys", "No keys to validate!")
             return
-
-        QMessageBox.information(self, "Validate All", f"Validating {len(self.keys)} keys...\n\n(Validation logic not implemented)")
+        
+        # Disable button during validation
+        self.btn_validate.setEnabled(False)
+        self.btn_validate.setText("⏳ Validating...")
+        
+        # Create and start worker thread
+        self.validation_worker = KeyValidationWorker(self.kind, self.keys)
+        self.validation_worker.result.connect(self._on_validation_result)
+        self.validation_worker.finished_all.connect(self._on_validation_complete)
+        self.validation_worker.start()
+    
+    def _on_validation_result(self, index, is_valid, message):
+        """Handle individual key validation result"""
+        if 0 <= index < len(self.keys):
+            key = self.keys[index]
+            self.validation_status[key] = (is_valid, message)
+            self._update_key_status(index, is_valid, message)
+    
+    def _on_validation_complete(self):
+        """Handle completion of all validations"""
+        self.btn_validate.setEnabled(True)
+        self.btn_validate.setText("✓ Validate All")
+        
+        # Count results
+        valid_count = sum(1 for k in self.keys if k in self.validation_status and self.validation_status[k][0])
+        invalid_count = len(self.keys) - valid_count
+        
+        QMessageBox.information(
+            self,
+            "Validation Complete",
+            f"Validated {len(self.keys)} keys:\n\n"
+            f"✅ Valid: {valid_count}\n"
+            f"❌ Invalid: {invalid_count}"
+        )
+    
+    def _update_key_status(self, index, is_valid, message):
+        """Update the visual status indicator for a key"""
+        if not (0 <= index < self.list_widget.count()):
+            return
+            
+        item = self.list_widget.item(index)
+        item_widget = self.list_widget.itemWidget(item)
+        
+        if item_widget:
+            # Find the status label (first widget in layout)
+            layout = item_widget.layout()
+            if layout and layout.count() > 0:
+                status_label = layout.itemAt(0).widget()
+                if isinstance(status_label, QLabel):
+                    if is_valid:
+                        status_label.setText("●")
+                        status_label.setStyleSheet("color: #4CAF50; padding: 2px;")  # Green
+                        status_label.setToolTip(f"✅ Valid\n{message}")
+                    else:
+                        status_label.setText("●")
+                        status_label.setStyleSheet("color: #F44336; padding: 2px;")  # Red
+                        status_label.setToolTip(f"❌ Invalid\n{message}")
+            
+            # Also update the key label tooltip
+            if layout and layout.count() > 1:
+                key_label = layout.itemAt(1).widget()
+                if isinstance(key_label, QLabel) and index < len(self.keys):
+                    key = self.keys[index]
+                    tooltip = key + f"\n\nStatus: {'✅ Valid' if is_valid else '❌ Invalid'}\n{message}"
+                    key_label.setToolTip(tooltip)
 
     def get_keys(self):
         """Get all keys as list"""
