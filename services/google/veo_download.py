@@ -6,17 +6,12 @@ Implements video download using Google Veo API endpoints with quality selection 
 
 import os
 import time
+from http.client import IncompleteRead
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from http.client import IncompleteRead
+from requests.exceptions import ChunkedEncodingError, ConnectionError, RequestException, Timeout
 from urllib3.exceptions import IncompleteRead as Urllib3IncompleteRead
-from requests.exceptions import (
-    ConnectionError,
-    Timeout,
-    ChunkedEncodingError,
-    RequestException
-)
 
 
 class VeoDownloader:
@@ -293,10 +288,13 @@ class VeoDownloader:
                         os.remove(output_path)
                     except OSError:
                         pass
-                
+
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    self.log(f"[Veo] Incomplete download, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    self.log(
+                        f"[Veo] Incomplete download, retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(wait_time)
                 else:
                     self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
@@ -309,10 +307,13 @@ class VeoDownloader:
                         os.remove(output_path)
                     except OSError:
                         pass
-                
+
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    self.log(f"[Veo] Connection error, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                    self.log(
+                        f"[Veo] Connection error, retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
                     time.sleep(wait_time)
                 else:
                     self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
@@ -325,12 +326,15 @@ class VeoDownloader:
                         os.remove(output_path)
                     except OSError:
                         pass
-                
+
                 # Check if it's a DNS resolution error
                 if "Failed to resolve" in str(e) or "getaddrinfo failed" in str(e):
                     if attempt < max_retries - 1:
                         wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                        self.log(f"[Veo] DNS resolution error, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})")
+                        self.log(
+                            f"[Veo] DNS resolution error, retrying in {wait_time}s... "
+                            f"(attempt {attempt + 1}/{max_retries})"
+                        )
                         time.sleep(wait_time)
                     else:
                         self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
@@ -352,7 +356,7 @@ class VeoDownloader:
         # If we've exhausted all retries, log and return False
         if last_exception:
             self.log(f"[Veo] Download failed after {max_retries} attempts: {last_exception}")
-        
+
         return False
 
     def poll_and_download(
