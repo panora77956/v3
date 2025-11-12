@@ -3,6 +3,7 @@ from typing import Dict, Any
 import datetime, json, re, logging
 from pathlib import Path
 from services.gemini_client import GeminiClient
+from services import domain_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -216,12 +217,38 @@ def _build_system_prompt(cfg:Dict[str,Any], sceneCount:int, models_json:str, pro
     aspectRatio = cfg.get("ratio") or "9:16"
     voiceId = cfg.get("voice_id") or "ElevenLabs_VoiceID"
     imagesList = _images_refs(bool(models_json.strip()), product_count)
+    
+    # Get domain-specific system prompt if domain and topic are provided
+    domain = cfg.get("domain", "")
+    topic = cfg.get("topic", "")
+    domain_system_prompt = ""
+    
+    if domain and topic:
+        domain_system_prompt = domain_prompts.get_system_prompt(domain, topic)
+        if domain_system_prompt:
+            logger.info(f"Using domain-specific system prompt: {domain}/{topic}")
+        else:
+            logger.warning(f"No system prompt found for domain={domain}, topic={topic}")
+    
+    # Build the system prompt with optional domain-specific instructions
+    domain_instructions = ""
+    if domain_system_prompt:
+        domain_instructions = f"""
+═══════════════════════════════════════════════════════════════
+🎭 DOMAIN-SPECIFIC CHARACTER & STYLE INSTRUCTIONS
+═══════════════════════════════════════════════════════════════
 
-    return f"""
-Objective: Create a HIGHLY ENGAGING sales video script in JSON format that CONVERTS viewers into customers. 
+{domain_system_prompt}
+
+IMPORTANT: Follow the CHARACTER BIBLE, psychology, and style guidelines above throughout the entire script.
+═══════════════════════════════════════════════════════════════
+"""
+    
+    base_prompt = f"""
+Objective: Create a HIGHLY ENGAGING sales video script in JSON format that CONVERTS viewers into customers.
 The output MUST be a valid JSON object with a "scenes" key containing an array of scene objects.
 All content MUST be in the target language ({languageCode}).
-
+{domain_instructions}
 ═══════════════════════════════════════════════════════════════
 🎯 SALES VIDEO SUCCESS FRAMEWORK
 ═══════════════════════════════════════════════════════════════
@@ -335,7 +362,9 @@ Output Format (Strictly Adhere):
     }}
   ]
 }}
-""".strip()
+"""
+    
+    return base_prompt.strip()
 
 def _build_image_prompt(struct:Dict[str,Any], visualStyleString:str)->str:
     camera = (struct or {}).get("camera_direction","")

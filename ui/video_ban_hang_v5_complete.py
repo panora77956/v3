@@ -38,6 +38,7 @@ try:
     from services import image_gen_service
     from services import sales_script_service as sscript
     from services import sales_video_service as svc
+    from services import domain_prompts
     from ui.widgets.model_selector import ModelSelectorWidget
     from ui.widgets.scene_result_card import SceneResultCard
     from ui.widgets.history_widget import HistoryWidget  # History tab widget
@@ -49,6 +50,7 @@ except ImportError as e:
     sscript = None
     svc = None
     HistoryWidget = None  # Fallback for missing history widget
+    domain_prompts = None
 
 # V5 Styling
 FONT_H2 = QFont("Segoe UI", 15, QFont.Bold)
@@ -847,6 +849,25 @@ class VideoBanHangV5(QWidget):
         lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
         form.addWidget(lbl, 4, 2)
         form.addWidget(self.cb_social, 4, 3)
+        
+        # Row 5: Domain | Topic (NEW - for system prompts)
+        self.cb_domain = make_widget(QComboBox)
+        self.cb_domain.addItem("(Không chọn)")
+        if domain_prompts:
+            domains = domain_prompts.get_all_domains()
+            self.cb_domain.addItems(domains)
+        self.cb_domain.currentTextChanged.connect(self._on_domain_changed)
+        lbl = QLabel("Lĩnh vực:")
+        lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        form.addWidget(lbl, 5, 0)
+        form.addWidget(self.cb_domain, 5, 1)
+        
+        self.cb_topic = make_widget(QComboBox)
+        self.cb_topic.addItem("(Không chọn)")
+        lbl = QLabel("Chủ đề:")
+        lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        form.addWidget(lbl, 5, 2)
+        form.addWidget(self.cb_topic, 5, 3)
 
         settings_content.addLayout(form)
 
@@ -1209,6 +1230,16 @@ class VideoBanHangV5(QWidget):
         """)
         return gb
 
+    def _on_domain_changed(self, domain_text):
+        """Handle domain selection change - populate topic dropdown"""
+        self.cb_topic.clear()
+        self.cb_topic.addItem("(Không chọn)")
+        
+        if domain_text and domain_text != "(Không chọn)" and domain_prompts:
+            topics = domain_prompts.get_topics_for_domain(domain_text)
+            if topics:
+                self.cb_topic.addItems(topics)
+
     def _on_section_toggled(self, toggled_section, checked):
         """Handle section toggle - accordion behavior"""
         container = None
@@ -1293,6 +1324,16 @@ class VideoBanHangV5(QWidget):
                 except:
                     first_model_json = str(models[0]["data"])
 
+        # Get domain and topic for system prompts
+        domain = self.cb_domain.currentText()
+        topic = self.cb_topic.currentText()
+        
+        # Only include domain/topic if they are selected (not "(Không chọn)")
+        if domain == "(Không chọn)":
+            domain = ""
+        if topic == "(Không chọn)":
+            topic = ""
+        
         return {
             "project_name": (self.ed_name.text() or "").strip() or (svc.default_project_name() if svc else "Project"),
             "idea": self.ed_idea.toPlainText(),
@@ -1307,6 +1348,8 @@ class VideoBanHangV5(QWidget):
             "ratio": self.cb_ratio.currentText(),
             "speech_lang": self.LANGUAGE_MAP.get(self.cb_lang.currentText(), "vi"),
             "social_platform": self.cb_social.currentText(),
+            "domain": domain,
+            "topic": topic,
             "first_model_json": first_model_json,
             "product_count": len(self.prod_paths),
             "models": models,
