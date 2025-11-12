@@ -1239,8 +1239,16 @@ class Text2VideoPanelV5(QWidget):
         self.setStyleSheet(groupbox_style)
 
     def _append_log(self, msg):
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        self.console.append(f"[{ts}] {msg}")
+        """Append log message to console in thread-safe manner"""
+        try:
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            # Ensure we're working with string type
+            if not isinstance(msg, str):
+                msg = str(msg)
+            self.console.append(f"[{ts}] {msg}")
+        except Exception as e:
+            # Fallback in case of any threading or formatting issues
+            print(f"[LOG ERROR] Failed to append log: {e}, msg={msg}")
 
     def _toggle_char_ref_ui(self, state):
         """Toggle visibility of character reference image UI"""
