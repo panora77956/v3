@@ -178,6 +178,10 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
         if "'" in cleaned and cleaned.count("'") > cleaned.count('"'):
             cleaned = cleaned.replace("'", '"')
 
+        # Remove invalid control characters (ASCII 0-31 except whitespace)
+        # This fixes the "Invalid control character" error
+        cleaned = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', cleaned)
+
         # Apply comprehensive JSON formatting fixes
         cleaned = _fix_json_formatting(cleaned)
 
@@ -193,6 +197,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
 
         if start != -1 and end != -1 and end > start:
             json_str = response_text[start:end+1]
+
+            # Remove invalid control characters
+            json_str = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', json_str)
 
             # Try to parse
             try:
