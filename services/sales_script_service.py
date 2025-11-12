@@ -244,11 +244,10 @@ IMPORTANT: Follow the CHARACTER BIBLE, psychology, and style guidelines above th
 ═══════════════════════════════════════════════════════════════
 """
     
-    base_prompt = f"""
-Objective: Create a HIGHLY ENGAGING sales video script in JSON format that CONVERTS viewers into customers.
-The output MUST be a valid JSON object with a "scenes" key containing an array of scene objects.
-All content MUST be in the target language ({languageCode}).
-{domain_instructions}
+    # Include framework instructions only when NO domain-specific prompt is provided
+    framework_instructions = ""
+    if not domain_system_prompt:
+        framework_instructions = f"""
 ═══════════════════════════════════════════════════════════════
 🎯 SALES VIDEO SUCCESS FRAMEWORK
 ═══════════════════════════════════════════════════════════════
@@ -275,6 +274,14 @@ All content MUST be in the target language ({languageCode}).
 
 5. **CALL TO ACTION**: Clear, urgent, benefit-focused
 
+═══════════════════════════════════════════════════════════════
+"""
+    
+    base_prompt = f"""
+Objective: Create a HIGHLY ENGAGING sales video script in JSON format that CONVERTS viewers into customers.
+The output MUST be a valid JSON object with a "scenes" key containing an array of scene objects.
+All content MUST be in the target language ({languageCode}).
+{domain_instructions}{framework_instructions}
 ═══════════════════════════════════════════════════════════════
 📋 INPUT INFORMATION
 ═══════════════════════════════════════════════════════════════
