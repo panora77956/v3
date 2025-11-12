@@ -170,6 +170,18 @@ class VideoMergeWorker(QThread):
         """Simple concatenation without transitions"""
         self.progress.emit("📝 Tạo danh sách video...")
 
+        # Ensure output directory exists and is writable
+        output_dir = os.path.dirname(self.output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                self.progress.emit(f"✅ Đã tạo thư mục: {output_dir}")
+            except OSError as e:
+                raise RuntimeError(f"Không thể tạo thư mục đích: {str(e)}")
+
+        if output_dir and not os.access(output_dir, os.W_OK):
+            raise RuntimeError(f"Không có quyền ghi vào thư mục: {output_dir}")
+
         # Create temporary concat file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             concat_file = f.name
@@ -205,9 +217,12 @@ class VideoMergeWorker(QThread):
 
             # Move temp file to final output
             if os.path.exists(temp_output):
-                if os.path.exists(self.output_path):
-                    os.remove(self.output_path)
-                os.rename(temp_output, self.output_path)
+                try:
+                    if os.path.exists(self.output_path):
+                        os.remove(self.output_path)
+                    os.rename(temp_output, self.output_path)
+                except OSError as e:
+                    raise RuntimeError(f"Không thể lưu file video: {str(e)}")
 
         finally:
             # Clean up temp file
@@ -219,6 +234,18 @@ class VideoMergeWorker(QThread):
     def _merge_with_transitions(self):
         """Merge videos with transition effects"""
         self.progress.emit(f"🎨 Thêm hiệu ứng chuyển cảnh '{self.transition}'...")
+
+        # Ensure output directory exists and is writable
+        output_dir = os.path.dirname(self.output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                self.progress.emit(f"✅ Đã tạo thư mục: {output_dir}")
+            except OSError as e:
+                raise RuntimeError(f"Không thể tạo thư mục đích: {str(e)}")
+
+        if output_dir and not os.access(output_dir, os.W_OK):
+            raise RuntimeError(f"Không có quyền ghi vào thư mục: {output_dir}")
 
         # Map transition names to xfade filter types
         transition_map = {
@@ -303,9 +330,12 @@ class VideoMergeWorker(QThread):
 
         # Move temp file to final output
         if os.path.exists(temp_output):
-            if os.path.exists(self.output_path):
-                os.remove(self.output_path)
-            os.rename(temp_output, self.output_path)
+            try:
+                if os.path.exists(self.output_path):
+                    os.remove(self.output_path)
+                os.rename(temp_output, self.output_path)
+            except OSError as e:
+                raise RuntimeError(f"Không thể lưu file video: {str(e)}")
 
     def _add_audio(self):
         """Add audio track to video"""
@@ -313,7 +343,10 @@ class VideoMergeWorker(QThread):
             return
 
         temp_input = self.output_path + ".temp_video.mp4"
-        os.rename(self.output_path, temp_input)
+        try:
+            os.rename(self.output_path, temp_input)
+        except OSError as e:
+            raise RuntimeError(f"Không thể tạo file tạm: {str(e)}")
 
         # Build ffmpeg command to add audio
         cmd = [
@@ -338,7 +371,10 @@ class VideoMergeWorker(QThread):
 
         if result.returncode != 0:
             # Restore original if failed
-            os.rename(temp_input, self.output_path)
+            try:
+                os.rename(temp_input, self.output_path)
+            except OSError:
+                pass
             raise RuntimeError(f"Failed to add audio: {result.stderr}")
 
         # Clean up temp file
@@ -362,7 +398,10 @@ class VideoMergeWorker(QThread):
             return
 
         temp_input = self.output_path + ".temp_scale.mp4"
-        os.rename(self.output_path, temp_input)
+        try:
+            os.rename(self.output_path, temp_input)
+        except OSError as e:
+            raise RuntimeError(f"Không thể tạo file tạm: {str(e)}")
 
         # Build ffmpeg command to scale
         cmd = [
@@ -386,7 +425,10 @@ class VideoMergeWorker(QThread):
 
         if result.returncode != 0:
             # Restore original if failed
-            os.rename(temp_input, self.output_path)
+            try:
+                os.rename(temp_input, self.output_path)
+            except OSError:
+                pass
             raise RuntimeError(f"Failed to scale resolution: {result.stderr}")
 
         # Clean up temp file
@@ -626,7 +668,7 @@ class VideoMergePanel(QWidget):
         """)
         path_row.addWidget(self.output_path)
 
-        self.btn_browse_output = QPushButton("📁 Chọn thư mục")
+        self.btn_browse_output = QPushButton("📁 Chọn vị trí lưu")
         self.btn_browse_output.setMinimumHeight(36)
         self.btn_browse_output.setStyleSheet("""
             QPushButton {
@@ -647,7 +689,7 @@ class VideoMergePanel(QWidget):
         layout.addLayout(path_row)
 
         # Important note
-        note = QLabel("⚠️ BẮT BUỘC: Phải chọn thư mục lưu video trước khi ghép")
+        note = QLabel("⚠️ BẮT BUỘC: Phải chọn vị trí và tên file để lưu video trước khi ghép")
         note.setStyleSheet("color: #F44336; font-weight: bold; font-size: 12px; margin-top: 5px;")
         layout.addWidget(note)
 
@@ -856,7 +898,7 @@ class VideoMergePanel(QWidget):
         """Browse output location"""
         file, _ = QFileDialog.getSaveFileName(
             self,
-            "Chọn vị trí lưu video",
+            "Chọn vị trí và tên file để lưu video",
             "",
             "MP4 Video (*.mp4)"
         )
@@ -864,6 +906,30 @@ class VideoMergePanel(QWidget):
         if file:
             if not file.endswith('.mp4'):
                 file += '.mp4'
+
+            # Check if directory exists and is writable
+            output_dir = os.path.dirname(file)
+            if output_dir and not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self._append_log(f"✅ Đã tạo thư mục: {output_dir}")
+                except OSError as e:
+                    QMessageBox.warning(
+                        self,
+                        "Lỗi tạo thư mục",
+                        f"Không thể tạo thư mục:\n{output_dir}\n\nLỗi: {str(e)}"
+                    )
+                    return
+
+            # Check if directory is writable
+            if output_dir and not os.access(output_dir, os.W_OK):
+                QMessageBox.warning(
+                    self,
+                    "Lỗi quyền truy cập",
+                    f"Không có quyền ghi vào thư mục:\n{output_dir}\n\nVui lòng chọn thư mục khác."
+                )
+                return
+
             self.output_path.setText(file)
 
     def _update_video_count(self):
