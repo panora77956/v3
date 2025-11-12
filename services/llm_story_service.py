@@ -46,14 +46,14 @@ def _n_scenes(total_seconds:int):
         tuple: (number_of_scenes, list_of_scene_durations)
     """
     total=max(3, int(total_seconds or 30))
-    
+
     # For long videos (>120s), use exact division without rounding up
     if total > 120:
         n = max(1, total // 8)
     else:
         # For shorter videos, use original formula with rounding up
         n = max(1, (total+7)//8)
-    
+
     # Distribute duration: all scenes are 8s except the last one gets remainder
     per=[8]*(n-1)+[max(1,total-8*(n-1))]
     return n, per
@@ -723,18 +723,22 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
 
 def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     """
-    Call Gemini API with retry logic for 503 errors and timeouts
-    
-    Strategy:
-    1. Try primary API key
-    2. If 503 error or timeout, try up to 2 additional keys from config
-    3. Add exponential backoff (1s, 2s, 4s)
-    
+    Call Gemini API with enhanced retry logic for 503 errors and timeouts
+
+    Strategy for 503 errors (server overload):
+    1. Multiple passes through all available keys (up to 3 passes)
+    2. Progressive backoff: increases with each pass and attempt
+    3. Pass 1: 2-8s delays, Pass 2: 15-30s delays, Pass 3: 30-60s delays
+    4. Total retry time: up to ~10 minutes for severe overload situations
+
+    This gives Google's servers time to recover from temporary overload
+    while still utilizing all available API keys for redundancy.
+
     Args:
         prompt: Text prompt for Gemini
         api_key: Primary API key
         model: Model name (default: gemini-2.5-flash)
-        timeout: Request timeout in seconds (default: auto-calculated from prompt length)
+        timeout: Request timeout in seconds (default: auto-calculated)
     """
     import time
 
@@ -751,7 +755,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
         prompt_length = len(prompt)
         if prompt_length > 10000:
             extra_time = ((prompt_length - 10000) // 5000) * 10
-            timeout = min(base_timeout + extra_time, 120)  # Cap at 2 minutes (matches real performance)
+            # Cap at 2 minutes (matches real performance)
+            timeout = min(base_timeout + extra_time, 120)
         else:
             timeout = base_timeout
 
@@ -759,113 +764,200 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
     keys = [api_key]
     all_keys = get_all_keys('google')
     keys.extend([k for k in all_keys if k != api_key])
-    
-    # For 503 errors, we want to try all keys since it's a server issue, not key issue
-    # Try all available keys (no artificial limit) - user configured them for redundancy
-    # If they have many keys, it increases chances of finding a working server
-    max_keys = len(keys)
-    
-    print(f"[INFO] Gemini API: Found {len(keys)} keys, will try all {max_keys} keys if needed")
+
+    if not keys or not keys[0]:
+        raise RuntimeError("No Gemini API keys configured")
+
+    # Enhanced retry strategy: Multiple passes with progressive backoff
+    # Pass 1: Quick attempts (2-8s delays) - catches temporary glitches
+    # Pass 2: Medium delays (15-30s) - waits for minor overload recovery
+    # Pass 3: Long delays (30-60s) - waits for major overload recovery
+    max_passes = 3
+    total_attempts = len(keys) * max_passes
+
+    print(
+        f"[INFO] Gemini API: Found {len(keys)} keys, "
+        f"up to {max_passes} passes ({total_attempts} max attempts)"
+    )
 
     last_error = None
+    attempt_num = 0
 
-    for attempt, key in enumerate(keys[:max_keys]):
-        try:
-            # Build endpoint
-            url = gemini_text_endpoint(key) if model == "gemini-2.5-flash" else \
-                  f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+    for pass_num in range(max_passes):
+        for key_idx, key in enumerate(keys):
+            attempt_num += 1
 
-            headers = {"Content-Type": "application/json"}
-            data = {
-                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.9, "response_mime_type": "application/json"}
-            }
+            try:
+                # Build endpoint
+                url = gemini_text_endpoint(key) if model == "gemini-2.5-flash" else \
+                      f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
-            # Make request with dynamic timeout
-            r = requests.post(url, headers=headers, json=data, timeout=timeout)
+                headers = {"Content-Type": "application/json"}
+                data = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.9,
+                        "response_mime_type": "application/json"
+                    }
+                }
 
-            # Check for 503 specifically
-            if r.status_code == 503:
-                last_error = requests.HTTPError(f"503 Service Unavailable (Key attempt {attempt+1}/{max_keys})", response=r)
-                if attempt < max_keys - 1:  # Don't sleep on last attempt
-                    backoff = min(2 ** attempt, 8)  # 1s, 2s, 4s, 8s max
-                    print(f"[WARN] Gemini 503 error, retrying in {backoff}s with next key (attempt {attempt+2}/{max_keys})...")
-                    time.sleep(backoff)
+                # Make request with dynamic timeout
+                r = requests.post(url, headers=headers, json=data, timeout=timeout)
+
+                # Check for 503 specifically
+                if r.status_code == 503:
+                    error_msg = (
+                        f"503 Service Unavailable "
+                        f"(Pass {pass_num+1}/{max_passes}, "
+                        f"Key {key_idx+1}/{len(keys)})"
+                    )
+                    last_error = requests.HTTPError(error_msg, response=r)
+
+                    # Calculate progressive backoff based on pass number
+                    if pass_num == 0:
+                        # Pass 1: Quick retries (2-8s) - for temporary glitches
+                        backoff = min(2 ** key_idx, 8)
+                    elif pass_num == 1:
+                        # Pass 2: Medium delays (15-30s) - for minor overload
+                        backoff = min(15 + (key_idx * 3), 30)
+                    else:
+                        # Pass 3: Long delays (30-60s) - for major overload
+                        backoff = min(30 + (key_idx * 5), 60)
+
+                    if attempt_num < total_attempts:
+                        print(
+                            f"[WARN] Gemini 503 error "
+                            f"(Pass {pass_num+1}/{max_passes}, "
+                            f"Key {key_idx+1}/{len(keys)}), "
+                            f"retrying in {backoff}s... "
+                            f"(attempt {attempt_num}/{total_attempts})"
+                        )
+                        time.sleep(backoff)
+                    else:
+                        print(
+                            f"[ERROR] Gemini 503 error on final attempt "
+                            f"({attempt_num}/{total_attempts})"
+                        )
+                    continue  # Try next key
+
+                # Raise for other HTTP errors
+                r.raise_for_status()
+
+                # Parse response
+                out = r.json()
+                txt = out["candidates"][0]["content"]["parts"][0]["text"]
+                print(
+                    f"[SUCCESS] Gemini API responded successfully "
+                    f"on attempt {attempt_num} "
+                    f"(Pass {pass_num+1}, Key {key_idx+1})"
+                )
+                return parse_llm_response_safe(txt, "Gemini")
+
+            except requests.exceptions.HTTPError as e:
+                # Only retry 503 errors
+                if hasattr(e, 'response') and e.response.status_code == 503:
+                    last_error = e
+
+                    # Calculate progressive backoff based on pass number
+                    if pass_num == 0:
+                        backoff = min(2 ** key_idx, 8)
+                    elif pass_num == 1:
+                        backoff = min(15 + (key_idx * 3), 30)
+                    else:
+                        backoff = min(30 + (key_idx * 5), 60)
+
+                    if attempt_num < total_attempts:
+                        print(
+                            f"[WARN] HTTP 503 "
+                            f"(Pass {pass_num+1}/{max_passes}, "
+                            f"Key {key_idx+1}/{len(keys)}), "
+                            f"trying again in {backoff}s..."
+                        )
+                        time.sleep(backoff)
+                    continue
                 else:
-                    print(f"[ERROR] Gemini 503 error on final attempt ({attempt+1}/{max_keys})")
-                continue  # Try next key
+                    # Other HTTP errors (429, 400, 401, etc.) - raise immediately
+                    raise
 
-            # Raise for other HTTP errors
-            r.raise_for_status()
-
-            # Parse response
-            out = r.json()
-            txt = out["candidates"][0]["content"]["parts"][0]["text"]
-            return parse_llm_response_safe(txt, "Gemini")
-
-        except requests.exceptions.HTTPError as e:
-            # Only retry 503 errors
-            if hasattr(e, 'response') and e.response.status_code == 503:
+            except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                # Retry timeout errors with next key
                 last_error = e
-                if attempt < max_keys - 1:
-                    backoff = min(2 ** attempt, 8)
-                    print(f"[WARN] HTTP 503, trying key {attempt+2}/{max_keys} in {backoff}s...")
+                if attempt_num < total_attempts:
+                    backoff = min(2 ** key_idx, 8)
+                    print(
+                        f"[WARN] Request timeout "
+                        f"(Pass {pass_num+1}, Key {key_idx+1}), "
+                        f"trying again in {backoff}s..."
+                    )
                     time.sleep(backoff)
-                continue
-            else:
-                # Other HTTP errors (429, 400, 401, etc.) - raise immediately
+                    continue
+                else:
+                    # Last attempt - wrap in user-friendly error message
+                    raise RuntimeError(
+                        f"Gemini API request timed out after {timeout}s "
+                        f"(tried {len(keys)} keys across {max_passes} passes). "
+                        f"Gemini typically responds in 30-60s. "
+                        f"This timeout suggests a connectivity issue. "
+                        f"Suggestions: (1) Check your internet connection "
+                        f"and firewall settings, "
+                        f"(2) Verify your API key is valid and not rate-limited, "
+                        f"(3) Try again in a few moments."
+                    ) from e
+
+            except Exception as e:
+                # Non-HTTP, non-timeout errors - raise immediately
+                last_error = e
                 raise
-
-        except (requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
-            # Retry timeout errors with next key
-            last_error = e
-            if attempt < max_keys - 1:
-                backoff = min(2 ** attempt, 8)
-                print(f"[WARN] Request timeout, trying key {attempt+2}/{max_keys} in {backoff}s...")
-                time.sleep(backoff)
-                continue
-            else:
-                # Last attempt - wrap in user-friendly error message
-                raise RuntimeError(
-                    f"Gemini API request timed out after {timeout}s (tried {max_keys} API keys). "
-                    f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
-                    f"Suggestions: (1) Check your internet connection and firewall settings, "
-                    f"(2) Verify your API key is valid and not rate-limited, "
-                    f"(3) Try again in a few moments."
-                ) from e
-
-        except Exception as e:
-            # Non-HTTP, non-timeout errors - raise immediately
-            last_error = e
-            raise
 
     # All retries exhausted
     if last_error:
         # Check if it's a timeout error and provide helpful message
-        if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
+        if isinstance(
+            last_error,
+            (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)
+        ):
             raise RuntimeError(
-                f"Gemini API request timed out after {timeout}s (tried {max_keys} API keys). "
-                f"Gemini typically responds in 30-60s. This timeout suggests a connectivity issue. "
-                f"Suggestions: (1) Check your internet connection and firewall settings, "
+                f"Gemini API request timed out after {timeout}s "
+                f"(tried {len(keys)} keys across {max_passes} passes, "
+                f"total {total_attempts} attempts). "
+                f"Gemini typically responds in 30-60s. "
+                f"This timeout suggests a connectivity issue. "
+                f"Suggestions: (1) Check your internet connection "
+                f"and firewall settings, "
                 f"(2) Verify your API key is valid and not rate-limited, "
                 f"(3) Try again in a few moments."
             ) from last_error
         # Check if it's a 503 error and provide helpful message
-        elif (isinstance(last_error, requests.exceptions.HTTPError) and 
-              ((hasattr(last_error, 'response') and last_error.response is not None and last_error.response.status_code == 503) or 
-               "503" in str(last_error))):
+        elif (
+            isinstance(last_error, requests.exceptions.HTTPError) and
+            (
+                (
+                    hasattr(last_error, 'response') and
+                    last_error.response is not None and
+                    last_error.response.status_code == 503
+                ) or
+                "503" in str(last_error)
+            )
+        ):
             raise RuntimeError(
-                f"Gemini API service unavailable after {max_keys} attempts (HTTP 503). "
-                f"This error indicates that Google's Gemini servers are temporarily overloaded or under maintenance. "
-                f"Suggestions: (1) Wait a few minutes and try again, "
+                f"Gemini API service unavailable after {total_attempts} "
+                f"attempts across {max_passes} passes (HTTP 503). "
+                f"This indicates prolonged Google Gemini server overload "
+                f"or maintenance. "
+                f"Suggestions: (1) Wait 5-10 minutes and try again, "
                 f"(2) Try during off-peak hours for better availability, "
-                f"(3) Check Google's service status at https://status.cloud.google.com/, "
-                f"(4) Consider using a different model or API key if available, "
-                f"(5) Verify you have multiple API keys configured for automatic rotation."
+                f"(3) Check Google's service status at "
+                f"https://status.cloud.google.com/, "
+                f"(4) The system tried all {len(keys)} keys with "
+                f"progressive delays up to 60s. "
+                f"(5) Consider trying again later when server load is lower."
             ) from last_error
         else:
             # For other errors, use the generic message
-            raise RuntimeError(f"Gemini API failed after {max_keys} attempts: {last_error}") from last_error
+            raise RuntimeError(
+                f"Gemini API failed after {total_attempts} attempts: "
+                f"{last_error}"
+            ) from last_error
     else:
         raise RuntimeError("Gemini API failed with unknown error")
 
@@ -1183,7 +1275,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             from services.domain_prompts import build_expert_intro
             # Map language code to vi/en for domain prompts
             prompt_lang = "vi" if output_lang == "vi" else "en"
-            
+
             # OPTIMIZATION: Use cached domain prompt if available
             cache_key = f"{domain}|{topic}|{prompt_lang}"
             if cache_key in _domain_prompt_cache:
@@ -1191,7 +1283,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             else:
                 expert_intro = build_expert_intro(domain, topic, prompt_lang)
                 _domain_prompt_cache[cache_key] = expert_intro
-            
+
             prompt = f"{expert_intro}\n\n{prompt}"
         except Exception as e:
             # Log but don't fail if domain prompt loading fails
@@ -1201,7 +1293,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     if provider.lower().startswith("gemini"):
         key=api_key or gk
         if not key: raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
-        
+
         # OPTIMIZATION: More informative progress for long scenarios
         # Updated to reflect actual Gemini performance (30-60s typically)
         if duration_seconds > 300:  # 5+ minutes
@@ -1210,13 +1302,13 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 30-60 giây)", 25)
         else:
             report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 20-40 giây)", 25)
-        
+
         res=_call_gemini(prompt,key,"gemini-2.5-flash")
         report_progress("Đã nhận phản hồi từ Gemini", 50)
     else:
         key=api_key or ok
         if not key: raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
-        
+
         # OPTIMIZATION: More informative progress for long scenarios
         # Updated to reflect actual performance
         if duration_seconds > 300:
@@ -1225,7 +1317,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 30-60 giây)", 25)
         else:
             report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 20-40 giây)", 25)
-        
+
         # FIXED: Use gpt-4-turbo instead of gpt-5
         res=_call_openai(prompt,key,"gpt-4-turbo")
         report_progress("Đã nhận phản hồi từ OpenAI", 50)
@@ -1236,10 +1328,10 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     # OPTIMIZATION: Run all validation checks in parallel using ThreadPoolExecutor
     # This reduces validation time from ~2-3 seconds to <1 second
     import concurrent.futures
-    
+
     scenes = res.get("scenes", [])
     character_bible = res.get("character_bible", [])
-    
+
     # Define validation tasks
     def validate_duplicates():
         duplicates = _validate_scene_uniqueness(scenes, similarity_threshold=0.8)
@@ -1247,46 +1339,46 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             dup_msg = ", ".join([f"Scene {i} & {j} ({sim*100:.0f}% similar)" for i, j, sim in duplicates])
             print(f"[WARN] Duplicate scenes detected: {dup_msg}")
         return duplicates
-    
+
     def validate_relevance():
         is_relevant, relevance_score, warning_msg = _validate_idea_relevance(idea, res, threshold=IDEA_RELEVANCE_THRESHOLD)
         if not is_relevant and warning_msg:
             print(warning_msg)
         return is_relevant, relevance_score, warning_msg
-    
+
     def validate_dialogues():
         dialogue_valid, dialogue_warning = _validate_dialogue_language(scenes, output_lang)
         if not dialogue_valid and dialogue_warning:
             print(dialogue_warning)
         return dialogue_valid, dialogue_warning
-    
+
     def validate_continuity():
         continuity_issues = _validate_scene_continuity(scenes) if scenes else []
         if continuity_issues:
             print(f"[WARN] Scene continuity issues detected: {continuity_issues}")
         return continuity_issues
-    
+
     # Run all validations in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_duplicates = executor.submit(validate_duplicates)
         future_relevance = executor.submit(validate_relevance)
         future_dialogues = executor.submit(validate_dialogues)
         future_continuity = executor.submit(validate_continuity)
-        
+
         # Wait for all to complete
         duplicates = future_duplicates.result()
         is_relevant, relevance_score, warning_msg = future_relevance.result()
         dialogue_valid, dialogue_warning = future_dialogues.result()
         continuity_issues = future_continuity.result()
-    
+
     # Store validation results
     if not is_relevant and warning_msg:
         res["idea_relevance_warning"] = warning_msg
     res["idea_relevance_score"] = relevance_score
-    
+
     if not dialogue_valid and dialogue_warning:
         res["dialogue_language_warning"] = dialogue_warning
-    
+
     if continuity_issues:
         res["scene_continuity_warnings"] = continuity_issues
 
