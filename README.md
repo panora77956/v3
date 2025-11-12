@@ -38,6 +38,13 @@
 - ✅ Voice-over generation
 - ✅ Scene detector với FFmpeg
 
+### 🎞️ Video Merge / Ghép Video
+- ✅ **NEW**: Ghép nhiều video thành một
+- ✅ **NEW**: Hiệu ứng chuyển cảnh (fade, wipe, slide, dissolve)
+- ✅ **NEW**: Thêm audio từ file
+- ✅ **NEW**: Xuất 4K, 8K resolution
+- ✅ **NEW**: 10+ transition effects
+
 ---
 
 ## 🚀 Cài Đặt / Installation
@@ -141,6 +148,14 @@ python3 main_image2video.py
 - Tự động download và phân tích
 - Tách scenes
 - Clone với style mới
+
+#### 5. **Video Merge / Ghép Video** 🆕
+- Chọn nhiều video để ghép
+- Thêm hiệu ứng chuyển cảnh
+- Overlay audio/nhạc nền
+- Xuất ở độ phân giải cao (4K, 8K)
+- 10+ transition effects (fade, wipe, slide, dissolve)
+- **Xem thêm**: [Video Merge Feature Documentation](docs/VIDEO_MERGE_FEATURE.md)
 
 ### 📜 Lịch Sử Tạo Video / Video Creation History
 
@@ -338,6 +353,17 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 ---
 
 ## 📊 Phiên Bản / Version History
+
+### v7.3.0 (2025-11-12) - Video Merge Feature & Enhanced Error Handling
+- 🎞️ **NEW FEATURE**: Video Merge Panel (Ghép video)
+- ✨ **Enhancement**: Merge multiple videos with professional transitions
+- 🎨 **Feature**: 10+ transition effects (fade, wipe, slide, dissolve, circle crop)
+- 🎵 **Feature**: Audio overlay support (MP3, WAV, AAC, M4A, OGG)
+- 📐 **Feature**: Resolution scaling up to 8K (720p, 1080p, 2K, 4K, 8K)
+- 🔧 **Fix**: Enhanced error reporting in labs_flow_service (PUBLIC_ERROR_UNSAFE_GENERATION)
+- ✅ **Verification**: Audio generation correctly saves to project Audio folder
+- 📚 **Documentation**: Complete guide in docs/VIDEO_MERGE_FEATURE.md
+- 🧪 **Testing**: All unit tests passed, CodeQL security scan clean
 
 ### v7.2.10 (2025-01-12) - Scene-by-Scene Generation for Long Videos
 - 🚀 **Major Feature**: Scene-by-scene generation for videos >3 minutes (180 seconds)
