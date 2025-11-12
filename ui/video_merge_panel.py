@@ -18,8 +18,8 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt5.QtCore import QThread, Qt, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, QUrl
+from PyQt5.QtGui import QFont, QDesktopServices
 from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -351,6 +351,7 @@ class VideoMergePanel(QWidget):
         self.video_files = []
         self.audio_file = None
         self.worker = None
+        self.last_output_path = None  # Store last successful output path
         self._init_ui()
         
     def _init_ui(self):
@@ -406,6 +407,10 @@ class VideoMergePanel(QWidget):
         # Progress section
         progress_group = self._create_progress_section()
         main_layout.addWidget(progress_group)
+        
+        # Result section (video preview/actions)
+        result_group = self._create_result_section()
+        main_layout.addWidget(result_group)
         
         # Action buttons
         button_layout = self._create_action_buttons()
@@ -484,16 +489,27 @@ class VideoMergePanel(QWidget):
         # Transition effect
         self.cb_transition = QComboBox()
         self.cb_transition.addItem("Không có hiệu ứng", "none")
-        self.cb_transition.addItem("Fade (Mờ dần)", "fade")
-        self.cb_transition.addItem("Wipe Left (Quét trái)", "wipeleft")
-        self.cb_transition.addItem("Wipe Right (Quét phải)", "wiperight")
-        self.cb_transition.addItem("Wipe Up (Quét lên)", "wipeup")
-        self.cb_transition.addItem("Wipe Down (Quét xuống)", "wipedown")
-        self.cb_transition.addItem("Slide Left (Trượt trái)", "slideleft")
-        self.cb_transition.addItem("Slide Right (Trượt phải)", "slideright")
-        self.cb_transition.addItem("Circle Crop (Vòng tròn)", "circlecrop")
-        self.cb_transition.addItem("Dissolve (Hòa tan)", "dissolve")
+        self.cb_transition.addItem("✨ Fade (Mờ dần)", "fade")
+        self.cb_transition.addItem("✨ Wipe Left (Quét trái)", "wipeleft")
+        self.cb_transition.addItem("✨ Wipe Right (Quét phải)", "wiperight")
+        self.cb_transition.addItem("✨ Wipe Up (Quét lên)", "wipeup")
+        self.cb_transition.addItem("✨ Wipe Down (Quét xuống)", "wipedown")
+        self.cb_transition.addItem("✨ Slide Left (Trượt trái)", "slideleft")
+        self.cb_transition.addItem("✨ Slide Right (Trượt phải)", "slideright")
+        self.cb_transition.addItem("✨ Circle Crop (Vòng tròn)", "circlecrop")
+        self.cb_transition.addItem("✨ Dissolve (Hòa tan)", "dissolve")
+        self.cb_transition.setStyleSheet("""
+            QComboBox {
+                padding: 5px;
+                font-size: 13px;
+            }
+        """)
         layout.addRow("Hiệu ứng chuyển cảnh:", self.cb_transition)
+        
+        # Add note about transitions
+        transition_note = QLabel("💡 10+ hiệu ứng chuyển cảnh chuyên nghiệp")
+        transition_note.setStyleSheet("color: #2196F3; font-size: 11px; font-style: italic;")
+        layout.addRow("", transition_note)
         
         # Resolution
         self.cb_resolution = QComboBox()
@@ -501,9 +517,20 @@ class VideoMergePanel(QWidget):
         self.cb_resolution.addItem("720p (HD)", "720p")
         self.cb_resolution.addItem("1080p (Full HD)", "1080p")
         self.cb_resolution.addItem("2K (1440p)", "2k")
-        self.cb_resolution.addItem("4K (2160p)", "4k")
-        self.cb_resolution.addItem("8K (4320p)", "8k")
-        layout.addRow("Độ phân giải:", self.cb_resolution)
+        self.cb_resolution.addItem("4K (2160p) ⭐", "4k")
+        self.cb_resolution.addItem("8K (4320p) ⭐", "8k")
+        self.cb_resolution.setStyleSheet("""
+            QComboBox {
+                padding: 5px;
+                font-size: 13px;
+            }
+        """)
+        layout.addRow("Độ phân giải xuất:", self.cb_resolution)
+        
+        # Add note about high resolutions
+        resolution_note = QLabel("💡 4K và 8K cho chất lượng cao nhất")
+        resolution_note.setStyleSheet("color: #FF9800; font-size: 11px; font-style: italic;")
+        layout.addRow("", resolution_note)
         
         return group
         
@@ -513,18 +540,53 @@ class VideoMergePanel(QWidget):
         group.setFont(FONT_H2)
         layout = QVBoxLayout(group)
         
+        # Label for clarity
+        label = QLabel("Chọn thư mục và tên file để lưu video ghép:")
+        label.setStyleSheet("color: #666; font-size: 12px; margin-bottom: 5px;")
+        layout.addWidget(label)
+        
         # Output path
         path_row = QHBoxLayout()
         
         self.output_path = QLineEdit()
-        self.output_path.setPlaceholderText("Chọn vị trí lưu video...")
+        self.output_path.setPlaceholderText("Chọn vị trí lưu video (bắt buộc)...")
+        self.output_path.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                font-size: 13px;
+                border: 2px solid #ddd;
+                border-radius: 4px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #7C4DFF;
+            }
+        """)
         path_row.addWidget(self.output_path)
         
-        self.btn_browse_output = QPushButton("📁 Chọn")
+        self.btn_browse_output = QPushButton("📁 Chọn thư mục")
+        self.btn_browse_output.setMinimumHeight(36)
+        self.btn_browse_output.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 6px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
         self.btn_browse_output.clicked.connect(self._browse_output)
         path_row.addWidget(self.btn_browse_output)
         
         layout.addLayout(path_row)
+        
+        # Important note
+        note = QLabel("⚠️ BẮT BUỘC: Phải chọn thư mục lưu video trước khi ghép")
+        note.setStyleSheet("color: #F44336; font-weight: bold; font-size: 12px; margin-top: 5px;")
+        layout.addWidget(note)
         
         return group
         
@@ -545,6 +607,76 @@ class VideoMergePanel(QWidget):
         self.log_text.setMaximumHeight(120)
         self.log_text.setPlaceholderText("Nhật ký xử lý sẽ hiển thị ở đây...")
         layout.addWidget(self.log_text)
+        
+        return group
+    
+    def _create_result_section(self):
+        """Create result/preview section"""
+        group = QGroupBox("🎥 Xem Video")
+        group.setFont(FONT_H2)
+        layout = QVBoxLayout(group)
+        
+        # Info label
+        self.result_label = QLabel("Video ghép thành công sẽ hiển thị ở đây")
+        self.result_label.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
+        self.result_label.setWordWrap(True)
+        layout.addWidget(self.result_label)
+        
+        # Action buttons row
+        btn_row = QHBoxLayout()
+        
+        # Play video button
+        self.btn_play_video = QPushButton("▶️ Xem Video")
+        self.btn_play_video.setMinimumHeight(40)
+        self.btn_play_video.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 6px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+            }
+        """)
+        self.btn_play_video.clicked.connect(self._play_video)
+        self.btn_play_video.setEnabled(False)
+        btn_row.addWidget(self.btn_play_video)
+        
+        # Open folder button
+        self.btn_open_folder = QPushButton("📂 Mở Thư Mục")
+        self.btn_open_folder.setMinimumHeight(40)
+        self.btn_open_folder.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 6px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+            }
+        """)
+        self.btn_open_folder.clicked.connect(self._open_folder)
+        self.btn_open_folder.setEnabled(False)
+        btn_row.addWidget(self.btn_open_folder)
+        
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+        
+        # Initially hide the group
+        group.setVisible(False)
+        self.result_group = group
         
         return group
         
@@ -756,14 +888,92 @@ class VideoMergePanel(QWidget):
         self.btn_cancel.setVisible(False)
         
         if success:
+            # Store the output path
+            if self.output_path.text().strip():
+                self.last_output_path = self.output_path.text().strip()
+                
+                # Show result section with video preview options
+                self.result_group.setVisible(True)
+                self.result_label.setText(
+                    f"✅ Video ghép thành công!\n📁 {os.path.basename(self.last_output_path)}"
+                )
+                self.result_label.setStyleSheet("color: #4CAF50; font-weight: bold; padding: 10px;")
+                self.btn_play_video.setEnabled(True)
+                self.btn_open_folder.setEnabled(True)
+            
             QMessageBox.information(
                 self,
                 "Thành công",
-                message
+                message + "\n\nBạn có thể xem video bằng các nút bên dưới."
             )
         else:
             QMessageBox.critical(
                 self,
                 "Lỗi",
                 f"Ghép video thất bại:\n{message}"
+            )
+    
+    def _play_video(self):
+        """Open the merged video in default video player"""
+        if not self.last_output_path or not os.path.exists(self.last_output_path):
+            QMessageBox.warning(
+                self,
+                "Không tìm thấy file",
+                "File video không tồn tại. Vui lòng kiểm tra lại."
+            )
+            return
+        
+        try:
+            # Open video with system default player
+            url = QUrl.fromLocalFile(self.last_output_path)
+            if not QDesktopServices.openUrl(url):
+                # Fallback: try to open with OS-specific commands
+                if os.name == 'nt':  # Windows
+                    os.startfile(self.last_output_path)
+                elif os.name == 'posix':  # macOS and Linux
+                    subprocess.run(['xdg-open', self.last_output_path], check=False)
+            
+            self._append_log(f"▶️ Đang mở video: {os.path.basename(self.last_output_path)}")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Lỗi mở video",
+                f"Không thể mở video:\n{str(e)}"
+            )
+    
+    def _open_folder(self):
+        """Open the folder containing the merged video"""
+        if not self.last_output_path:
+            QMessageBox.warning(
+                self,
+                "Không có đường dẫn",
+                "Không tìm thấy thư mục chứa video."
+            )
+            return
+        
+        try:
+            folder_path = os.path.dirname(self.last_output_path)
+            if not os.path.exists(folder_path):
+                QMessageBox.warning(
+                    self,
+                    "Thư mục không tồn tại",
+                    f"Thư mục không tồn tại: {folder_path}"
+                )
+                return
+            
+            # Open folder with system file manager
+            url = QUrl.fromLocalFile(folder_path)
+            if not QDesktopServices.openUrl(url):
+                # Fallback for different OS
+                if os.name == 'nt':  # Windows
+                    os.startfile(folder_path)
+                elif os.name == 'posix':  # macOS and Linux
+                    subprocess.run(['xdg-open', folder_path], check=False)
+            
+            self._append_log(f"📂 Đang mở thư mục: {folder_path}")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Lỗi mở thư mục",
+                f"Không thể mở thư mục:\n{str(e)}"
             )
