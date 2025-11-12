@@ -823,12 +823,12 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     """
     Call Gemini API with intelligent retry logic for 503 errors and timeouts
     
-    OPTIMIZED Strategy:
+    Strategy:
     1. Dynamic timeout based on script duration (5-10 minutes for long scripts)
-    2. Fast exponential backoff for 503 errors (1s → 2s → 4s → 8s) - OPTIMIZED
-    3. Reduced retry attempts (4-5) for faster recovery - OPTIMIZED
+    2. Moderate exponential backoff for 503 errors (5s → 10s → 15s → 20s) to reduce rate limiting
+    3. Use all available API keys (up to 15) with proper rotation
     4. Fallback to alternative models (gemini-1.5-flash, gemini-2.0-flash-exp)
-    5. Aggressive circuit breaker pattern to skip failing keys quickly - OPTIMIZED
+    5. Add minimum delay between all API calls (3s) to prevent rate limiting
     6. Detailed progress reporting
     
     Args:
@@ -882,15 +882,18 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     all_keys = get_all_keys('google')
     keys.extend([k for k in all_keys if k != api_key])
     
-    # OPTIMIZATION: Reduced max attempts from 8 to 5 for faster failure recovery
-    # With faster backoff (1s, 2s, 4s, 8s), total max wait is ~15s instead of 137s
-    max_attempts = min(5, len(keys))
+    # Use all available keys (up to 15) instead of limiting to 5
+    # This allows the system to try all keys before giving up
+    max_attempts = len(keys)
     
-    report_progress(f"Gemini API: {len(keys)} keys available, will retry up to {max_attempts} times with fast retry")
+    report_progress(f"Gemini API: {len(keys)} keys available, will retry up to {max_attempts} times")
 
     last_error = None
-    failed_keys = set()  # Circuit breaker: track keys that consistently fail
-    key_failure_count = {}  # Track failure count per key for aggressive circuit breaking
+    failed_keys = set()  # Track keys that consistently fail
+    key_failure_count = {}  # Track failure count per key
+    
+    # Track last successful call time to enforce minimum delay
+    last_call_time = 0
 
     # Fallback models to try if primary model fails
     fallback_models = []
@@ -907,11 +910,19 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
             report_progress(f"Primary model failed, trying fallback model: {current_model}")
         
         for attempt in range(max_attempts):
-            # Get next key, skipping recently failed ones when possible
-            # OPTIMIZATION: Aggressive circuit breaker - skip keys with 2+ failures
+            # Enforce minimum delay between API calls to prevent rate limiting
+            # Gemini free tier: 15 RPM = 4s per request minimum
+            min_delay_between_calls = 3.0
+            time_since_last_call = time.time() - last_call_time
+            if last_call_time > 0 and time_since_last_call < min_delay_between_calls:
+                delay_needed = min_delay_between_calls - time_since_last_call
+                report_progress(f"Rate limit protection: waiting {delay_needed:.1f}s before next call...")
+                time.sleep(delay_needed)
+            
+            # Get next key, allowing more retries per key (up to 5 instead of 2)
             key = None
             for k in keys:
-                if k not in failed_keys or key_failure_count.get(k, 0) < 2:
+                if k not in failed_keys or key_failure_count.get(k, 0) < 5:
                     key = k
                     keys.remove(k)
                     keys.append(k)  # Move to end for round-robin
@@ -942,6 +953,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 # Make request with dynamic timeout (separate connection and read timeout)
                 connection_timeout = 30  # 30 seconds to establish connection
                 read_timeout = timeout  # Full timeout for reading response
+                
+                # Record call time for rate limiting
+                last_call_time = time.time()
+                
                 r = requests.post(url, headers=headers, json=data, timeout=(connection_timeout, read_timeout))
 
                 # Check for 503 specifically
@@ -951,9 +966,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # OPTIMIZATION: Fast exponential backoff: 1s, 2s, 4s, 8s (instead of 2s, 5s, 10s, 20s, 40s, 60s)
-                        # This reduces total max wait from 137s to ~15s
-                        backoff = min(2 ** attempt, 8)  # 1s, 2s, 4s, 8s (max)
+                        # Moderate exponential backoff: 5s, 10s, 15s, 20s (more appropriate for rate limiting)
+                        backoff = min(5 * (attempt + 1), 20)
                         
                         remaining = max_attempts - attempt - 1
                         report_progress(f"HTTP 503 error. Retrying with different key in {backoff}s ({remaining} attempts remaining)...")
@@ -969,9 +983,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # Use exponential backoff for rate limits: 5s, 10s, 15s, 20s
-                        # Rate limits typically need longer delays than 503 errors
-                        backoff = min(5 * (attempt + 1), 20)
+                        # Use exponential backoff for rate limits: 8s, 12s, 16s, 20s
+                        # Rate limits need longer delays to give keys time to recover
+                        backoff = min(8 + 4 * attempt, 20)
                         remaining = max_attempts - attempt - 1
                         report_progress(f"Rate limit (429). Trying next key in {backoff}s ({remaining} attempts remaining)...")
                         time.sleep(backoff)
@@ -991,8 +1005,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # OPTIMIZATION: Faster backoff for 5xx errors: 2s, 4s, 6s, 8s (instead of 5s, 10s, 15s, 20s, 25s, 30s)
-                        backoff = min(2 * (attempt + 1), 8)
+                        # Moderate backoff for 5xx errors: 5s, 10s, 15s, 20s
+                        backoff = min(5 * (attempt + 1), 20)
                         remaining = max_attempts - attempt - 1
                         report_progress(f"HTTP {r.status_code} error. Retrying in {backoff}s ({remaining} attempts remaining)...")
                         time.sleep(backoff)
@@ -1021,8 +1035,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # OPTIMIZATION: Fast exponential backoff for 503
-                        backoff = min(2 ** attempt, 8)  # 1s, 2s, 4s, 8s (max)
+                        # Moderate exponential backoff for 503: 5s, 10s, 15s, 20s
+                        backoff = min(5 * (attempt + 1), 20)
                         
                         remaining = max_attempts - attempt - 1
                         report_progress(f"HTTP 503 error. Retrying with different key in {backoff}s ({remaining} attempts remaining)...")
@@ -1040,7 +1054,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 key_failure_count[key] = key_failure_count.get(key, 0) + 1
                 
                 if attempt < max_attempts - 1:
-                    backoff = 3  # OPTIMIZATION: Reduced from 5s to 3s
+                    backoff = 5  # 5s delay for timeouts
                     remaining = max_attempts - attempt - 1
                     report_progress(f"Request timeout ({timeout}s). Trying next key in {backoff}s ({remaining} attempts remaining)...")
                     time.sleep(backoff)
@@ -1070,7 +1084,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
             (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)
         ):
             raise RuntimeError(
-                f"Gemini API request timed out after {timeout}s (tried {max_attempts} fast retries across {len(models_to_try)} models). "
+                f"Gemini API request timed out after {timeout}s (tried {max_attempts} retries with smart delays across {len(models_to_try)} models). "
                 f"For long scripts ({duration_seconds}s), generation can take several minutes. "
                 f"Suggestions: (1) Check your internet connection and firewall settings, "
                 f"(2) Verify your API keys are valid and not rate-limited, "
@@ -1090,13 +1104,13 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
             )
         ):
             raise RuntimeError(
-                f"Gemini API service unavailable after {max_attempts} fast retries with {len(models_to_try)} models (HTTP 503). "
+                f"Gemini API service unavailable after {max_attempts} retries with smart delays across {len(models_to_try)} models (HTTP 503). "
                 f"This error indicates that Google's Gemini servers are temporarily overloaded or under maintenance. "
-                f"We tried {', '.join(models_to_try)} but all returned 503 errors with optimized retry strategy. "
+                f"We tried {', '.join(models_to_try)} but all returned 503 errors. "
                 f"Suggestions: (1) Wait 2-5 minutes and try again (servers often recover quickly), "
                 f"(2) Try during off-peak hours for better availability, "
                 f"(3) Check Google's service status at https://status.cloud.google.com/, "
-                f"(4) All {len(keys)} API keys were attempted with fast failover."
+                f"(4) All {len(keys)} API keys were attempted with proper rate limiting."
             ) from last_error
         # Check if it's a 429 rate limit error and provide helpful message
         elif (
@@ -1111,9 +1125,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
             )
         ):
             raise RuntimeError(
-                f"Gemini API rate limit exceeded after {max_attempts} retries across {len(keys)} API key(s) (HTTP 429). "
+                f"Gemini API rate limit exceeded after {max_attempts} retries with smart delays across {len(keys)} API key(s) (HTTP 429). "
                 f"This error indicates you've exceeded Google's request quota limits. "
-                f"We tried all {len(keys)} available API key(s) with {', '.join(models_to_try)} model(s), but all were rate-limited. "
+                f"We tried all {len(keys)} available API key(s) with {', '.join(models_to_try)} model(s) with proper rate limiting delays, but all were rate-limited. "
                 f"Suggestions: (1) Wait 1-2 minutes before retrying - quotas often reset quickly, "
                 f"(2) Reduce the frequency of requests or add delays between operations, "
                 f"(3) Check your API quota limits at https://aistudio.google.com/app/apikey, "
