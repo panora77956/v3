@@ -6,9 +6,12 @@ Implements video download using Google Veo API endpoints with quality selection 
 
 import os
 import time
+from http.client import IncompleteRead
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from requests.exceptions import ChunkedEncodingError, ConnectionError, RequestException, Timeout
+from urllib3.exceptions import IncompleteRead as Urllib3IncompleteRead
 
 
 class VeoDownloader:
@@ -220,68 +223,141 @@ class VeoDownloader:
         self,
         url: str,
         output_path: str,
-        timeout: int = 300
+        timeout: int = 300,
+        max_retries: int = 3
     ) -> bool:
         """
-        Download video from URL to output path.
+        Download video from URL to output path with automatic retry on transient failures.
 
         Args:
             url: Video URL to download
             output_path: Local path to save video
             timeout: Download timeout in seconds
+            max_retries: Maximum number of retry attempts (default: 3)
 
         Returns:
             True if download succeeded, False otherwise
         """
-        try:
-            self.log(f"[Veo] Downloading video: {os.path.basename(output_path)}")
+        self.log(f"[Veo] Downloading video: {os.path.basename(output_path)}")
 
-            # Ensure output directory exists
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Download with streaming
-            with requests.get(url, stream=True, timeout=timeout, allow_redirects=True) as r:
-                r.raise_for_status()
+        last_exception = None
 
-                total = int(r.headers.get('content-length', 0))
-                downloaded = 0
+        for attempt in range(max_retries):
+            try:
+                # Download with streaming
+                with requests.get(url, stream=True, timeout=timeout, allow_redirects=True) as r:
+                    r.raise_for_status()
 
-                with open(output_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded += len(chunk)
+                    total = int(r.headers.get('content-length', 0))
+                    downloaded = 0
 
-                # Log progress
-                if total > 0:
-                    progress = (downloaded / total) * 100
-                    self.log(f"[Veo] Downloaded {downloaded}/{total} bytes ({progress:.1f}%)")
+                    with open(output_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
 
-            # Verify download
-            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                self.log("[Veo] Download verification failed - file empty or missing")
-                # Clean up empty or corrupted file
+                    # Log progress
+                    if total > 0:
+                        progress = (downloaded / total) * 100
+                        self.log(f"[Veo] Downloaded {downloaded}/{total} bytes ({progress:.1f}%)")
+
+                # Verify download
+                if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                    self.log("[Veo] Download verification failed - file empty or missing")
+                    # Clean up empty or corrupted file
+                    if os.path.exists(output_path):
+                        try:
+                            os.remove(output_path)
+                            self.log("[Veo] Removed corrupted file")
+                        except OSError:
+                            pass
+                    return False
+
+                self.log(f"[Veo] Download complete: {output_path}")
+                return True
+
+            except (IncompleteRead, Urllib3IncompleteRead, ChunkedEncodingError) as e:
+                # Handle incomplete read errors (connection broken during download)
+                last_exception = e
                 if os.path.exists(output_path):
                     try:
                         os.remove(output_path)
-                        self.log("[Veo] Removed corrupted file")
+                    except OSError:
+                        pass
+
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    self.log(
+                        f"[Veo] Incomplete download, retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
+
+            except (ConnectionError, Timeout) as e:
+                # Handle connection and timeout errors
+                last_exception = e
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except OSError:
+                        pass
+
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    self.log(
+                        f"[Veo] Connection error, retrying in {wait_time}s... "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
+
+            except RequestException as e:
+                # Handle other request exceptions
+                last_exception = e
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except OSError:
+                        pass
+
+                # Check if it's a DNS resolution error
+                if "Failed to resolve" in str(e) or "getaddrinfo failed" in str(e):
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                        self.log(
+                            f"[Veo] DNS resolution error, retrying in {wait_time}s... "
+                            f"(attempt {attempt + 1}/{max_retries})"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        self.log(f"[Veo] Download failed after {max_retries} attempts: {e}")
+                else:
+                    # For other request exceptions, fail immediately
+                    self.log(f"[Veo] Download error: {e}")
+                    return False
+
+            except Exception as e:
+                # Handle unexpected errors - don't retry
+                self.log(f"[Veo] Unexpected download error: {e}")
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
                     except OSError:
                         pass
                 return False
 
-            self.log(f"[Veo] Download complete: {output_path}")
-            return True
+        # If we've exhausted all retries, log and return False
+        if last_exception:
+            self.log(f"[Veo] Download failed after {max_retries} attempts: {last_exception}")
 
-        except Exception as e:
-            self.log(f"[Veo] Download error: {e}")
-            # Clean up partial download on error
-            if os.path.exists(output_path):
-                try:
-                    os.remove(output_path)
-                    self.log("[Veo] Removed partial download")
-                except OSError:
-                    pass
-            return False
+        return False
 
     def poll_and_download(
         self,
