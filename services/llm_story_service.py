@@ -969,10 +969,14 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        backoff = 5  # OPTIMIZATION: Reduced from 10s to 5s for faster retry
+                        # Use exponential backoff for rate limits: 5s, 10s, 15s, 20s
+                        # Rate limits typically need longer delays than 503 errors
+                        backoff = min(5 * (attempt + 1), 20)
                         remaining = max_attempts - attempt - 1
                         report_progress(f"Rate limit (429). Trying next key in {backoff}s ({remaining} attempts remaining)...")
                         time.sleep(backoff)
+                    else:
+                        report_progress(f"Rate limit (429) on final attempt with {current_model}")
                     continue
 
                 # Raise for other HTTP errors (4xx client errors should fail fast)
@@ -1093,6 +1097,29 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 f"(2) Try during off-peak hours for better availability, "
                 f"(3) Check Google's service status at https://status.cloud.google.com/, "
                 f"(4) All {len(keys)} API keys were attempted with fast failover."
+            ) from last_error
+        # Check if it's a 429 rate limit error and provide helpful message
+        elif (
+            isinstance(last_error, requests.exceptions.HTTPError) and
+            (
+                (
+                    hasattr(last_error, 'response') and
+                    last_error.response is not None and
+                    last_error.response.status_code == 429
+                ) or
+                "429" in str(last_error)
+            )
+        ):
+            raise RuntimeError(
+                f"Gemini API rate limit exceeded after {max_attempts} retries across {len(keys)} API key(s) (HTTP 429). "
+                f"This error indicates you've exceeded Google's request quota limits. "
+                f"We tried all {len(keys)} available API key(s) with {', '.join(models_to_try)} model(s), but all were rate-limited. "
+                f"Suggestions: (1) Wait 1-2 minutes before retrying - quotas often reset quickly, "
+                f"(2) Reduce the frequency of requests or add delays between operations, "
+                f"(3) Check your API quota limits at https://aistudio.google.com/app/apikey, "
+                f"(4) Consider upgrading your API plan for higher quota limits, "
+                f"(5) If you have multiple API keys, ensure they are correctly configured in config.json under 'google_keys'. "
+                f"Note: Even if keys work individually, rapid successive requests can trigger rate limits."
             ) from last_error
         else:
             # For other errors, use the generic message
