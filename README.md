@@ -206,6 +206,7 @@ python3 main_image2video.py
 - **[Vietnamese Text Fix](docs/VIETNAMESE_TEXT_FIX.md)** - Vietnamese text overlay and encoding fix
 - **[History Tab Feature](docs/HISTORY_TAB_FEATURE.md)** - Video creation history tracking
 - **[History Tab UI Mockup](docs/HISTORY_TAB_UI_MOCKUP.md)** - Visual UI design
+- **[Video Merge UI Reorganization](docs/VIDEO_MERGE_UI_REORGANIZATION.md)** - 2-row layout redesign
 
 ### Archive
 - [Historical Documentation](docs/archive/) - Previous versions and bug fixes
@@ -358,6 +359,14 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 
 ## 📊 Phiên Bản / Version History
 
+### v7.3.2 (2025-11-12) - Video Merge UI Reorganization
+- 🎨 **UI Enhancement**: Reorganized video merge panel into 2-row layout
+- 📐 **Layout**: Row 1: Video Files (66%) | Audio (33%) side-by-side
+- 📐 **Layout**: Row 2: Merge Settings (50%) | Output/Save Folder (50%) side-by-side
+- ✨ **UX Improvement**: Better space utilization and logical grouping
+- 🔧 **Code Quality**: Removed unused imports, fixed linting issues
+- 📚 **Documentation**: Added VIDEO_MERGE_UI_REORGANIZATION.md
+
 ### v7.3.1 (2025-11-12) - Video Merge v1.1 - Preview & Enhanced Visibility
 - 🎥 **NEW**: Video preview after merge completion
 - ▶️ **NEW**: "Xem Video" button - opens video in default player
@@ -474,6 +483,6 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 **Made with ❤️ by chamnv-dev**
 
-**Version:** 7.2.10
-**Updated:** 2025-01-12
+**Version:** 7.3.2
+**Updated:** 2025-11-12
 **Status:** ✅ Production Ready & Secure
