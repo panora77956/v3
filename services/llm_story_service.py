@@ -827,7 +827,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     1. Dynamic timeout based on script duration (5-10 minutes for long scripts)
     2. Fast exponential backoff for 503 errors (1s → 2s → 4s → 8s) - OPTIMIZED
     3. Reduced retry attempts (4-5) for faster recovery - OPTIMIZED
-    4. Fallback to alternative models (gemini-1.5-flash, gemini-1.5-pro)
+    4. Fallback to alternative models (gemini-1.5-flash, gemini-2.0-flash-exp)
     5. Aggressive circuit breaker pattern to skip failing keys quickly - OPTIMIZED
     6. Detailed progress reporting
     
@@ -895,7 +895,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     # Fallback models to try if primary model fails
     fallback_models = []
     if model == "gemini-2.5-flash":
-        fallback_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
+        # Use reliable fallback models that are known to be available
+        # gemini-2.0-flash-exp is used successfully in vision_prompt_generator.py
+        fallback_models = ["gemini-1.5-flash", "gemini-2.0-flash-exp"]
 
     # Try primary model first
     models_to_try = [model] + fallback_models
