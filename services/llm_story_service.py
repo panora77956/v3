@@ -86,32 +86,44 @@ def _fix_json_formatting(text: str) -> str:
     Returns:
         Fixed JSON string
     """
-    # Fix missing commas between JSON properties (common LLM error)
-    # Pattern 1: "value" followed by "key" without comma
-    text = re.sub(r'"\s+"', '", "', text)
-
-    # Pattern 2: number/boolean/null followed by "key" without comma
-    # Handles cases like: 1 "desc" -> 1, "desc"
-    text = re.sub(r'(\d+|true|false|null)(\s+)"', r'\1, "', text)
-
-    # Pattern 3: closing ] or } followed by "key" without comma
-    # Handles cases like: ] "key" -> ], "key" or } "key" -> }, "key"
-    text = re.sub(r'(]|})(\s+)"', r'\1, "', text)
-
-    # Fix missing commas between objects in arrays: }{ -> },{
+    # Strategy: Apply fixes in order from most specific to most general
+    # to avoid over-matching and corrupting valid JSON
+    
+    # 1. Fix missing commas between objects in arrays/objects
+    # These are safe to fix first as they have clear boundaries
+    
+    # Fix: }{ -> },{
     text = re.sub(r'\}\s*\{', '}, {', text)
-
-    # Fix missing commas: ]{ -> ],[
+    
+    # Fix: ]{ -> ],[
     text = re.sub(r'\]\s*\{', '], {', text)
-
-    # Fix missing commas: }[ -> },[
+    
+    # Fix: }[ -> },[
     text = re.sub(r'\}\s*\[', '}, [', text)
-
-    # Remove duplicate commas: ,, -> ,
-    text = re.sub(r',\s*,', ',', text)
-
-    # Remove trailing commas before } or ]
-    text = re.sub(r',(\s*[}\]])', r'\1', text)
+    
+    # Fix: ][ -> ],[
+    text = re.sub(r'\]\s*\[', '], [', text)
+    
+    # 2. Fix missing commas after closing brackets followed by property names
+    # Pattern: ] "key": -> ], "key":  or  } "key": -> }, "key":
+    text = re.sub(r'([\]}])(\s+)(")', r'\1,\2\3', text)
+    
+    # 3. Fix missing commas after primitives (numbers, booleans, null) followed by property names
+    # Pattern: true "key": -> true, "key":  or  123 "key": -> 123, "key":
+    text = re.sub(r'(\b(?:true|false|null|\d+(?:\.\d+)?)\b)(\s+)(")', r'\1,\2\3', text)
+    
+    # 4. Fix missing commas between string values and property names
+    # This is the most complex case - need to match closing quote of value, whitespace, opening quote of key
+    # Pattern: "value" "key": -> "value", "key":
+    # We need to be careful not to match quotes within strings
+    # Use a more specific pattern that looks for the colon after the second quote
+    text = re.sub(r'(")\s+("(?:[^"\\]|\\.)*?"\s*:)', r'\1, \2', text)
+    
+    # 5. Cleanup: Remove duplicate commas that might have been introduced
+    text = re.sub(r',\s*,+', ',', text)
+    
+    # 6. Cleanup: Remove trailing commas before closing brackets
+    text = re.sub(r',(\s*[\]}])', r'\1', text)
 
     return text
 
@@ -155,7 +167,13 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
             matches = re.findall(pattern, response_text, re.DOTALL)
             if matches:
                 cleaned = matches[0].strip()
-                return json.loads(cleaned)
+                # Try direct parse first
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    # If direct parse fails, apply formatting fixes
+                    cleaned = _fix_json_formatting(cleaned)
+                    return json.loads(cleaned)
     except json.JSONDecodeError as e:
         print(f"[DEBUG] {source} Strategy 2 failed (markdown extraction): {e}")
 
