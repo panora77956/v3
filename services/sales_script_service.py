@@ -6,42 +6,71 @@ from services.gemini_client import GeminiClient
 
 logger = logging.getLogger(__name__)
 
-def _fix_json_formatting(text: str) -> str:
+def _fix_json_formatting(text: str, max_iterations: int = 10) -> str:
     """
     Apply comprehensive JSON formatting fixes for common LLM errors.
+    Uses iterative application to handle multiple consecutive missing commas.
     
     Args:
         text: JSON string to fix
+        max_iterations: Maximum number of iterations to prevent infinite loops (default: 10)
         
     Returns:
         Fixed JSON string
     """
-    # Fix missing commas between JSON properties (common LLM error)
-    # Pattern 1: "value" followed by "key" without comma
-    text = re.sub(r'"\s+"', '", "', text)
+    # Strategy: Apply fixes iteratively until no more changes are made
+    # This handles cases like ["a" "b" "c"] which requires multiple passes
     
-    # Pattern 2: number/boolean/null followed by "key" without comma
-    # Handles cases like: 1 "desc" -> 1, "desc"
-    text = re.sub(r'(\d+|true|false|null)(\s+)"', r'\1, "', text)
+    iteration = 0
     
-    # Pattern 3: closing ] or } followed by "key" without comma
-    # Handles cases like: ] "key" -> ], "key" or } "key" -> }, "key"
-    text = re.sub(r'(]|})(\s+)"', r'\1, "', text)
-    
-    # Fix missing commas between objects in arrays: }{ -> },{
-    text = re.sub(r'\}\s*\{', '}, {', text)
-    
-    # Fix missing commas: ]{ -> ],[
-    text = re.sub(r'\]\s*\{', '], {', text)
-    
-    # Fix missing commas: }[ -> },[
-    text = re.sub(r'\}\s*\[', '}, [', text)
-    
-    # Remove duplicate commas: ,, -> ,
-    text = re.sub(r',\s*,', ',', text)
-    
-    # Remove trailing commas before } or ]
-    text = re.sub(r',(\s*[}\]])', r'\1', text)
+    while iteration < max_iterations:
+        iteration += 1
+        original_text = text
+        
+        # 1. Fix missing commas between objects in arrays/objects
+        # Fix: }{ -> },{
+        text = re.sub(r'\}\s*\{', '}, {', text)
+        
+        # Fix: ]{ -> ],[
+        text = re.sub(r'\]\s*\{', '], {', text)
+        
+        # Fix: }[ -> },[
+        text = re.sub(r'\}\s*\[', '}, [', text)
+        
+        # Fix: ][ -> ],[
+        text = re.sub(r'\]\s*\[', '], [', text)
+        
+        # 2. Fix missing commas after closing brackets followed by property names
+        text = re.sub(r'([\]}])(\s+)(")', r'\1,\2\3', text)
+        
+        # 3. Fix missing commas after primitives followed by property names
+        text = re.sub(r'(\b(?:true|false|null|\d+(?:\.\d+)?)\b)(\s+)(")', r'\1,\2\3', text)
+        
+        # 4. Fix missing commas between string values and property names
+        text = re.sub(r'(")\s+("(?:[^"\\]|\\.)*?"\s*:)', r'\1, \2', text)
+        
+        # 5. Fix missing commas between string values in arrays (not property names)
+        text = re.sub(r'("(?:[^"\\]|\\.)*?")(\s+)("(?:[^"\\]|\\.)*?")(?!\s*:)', r'\1,\2\3', text)
+        
+        # 6. Fix missing commas between primitive values in arrays
+        # number followed by number/bool/null
+        text = re.sub(r'(\b\d+(?:\.\d+)?)\s+(\b(?:\d+(?:\.\d+)?|true|false|null)\b)', r'\1, \2', text)
+        
+        # bool/null followed by number/bool/null
+        text = re.sub(r'(\b(?:true|false|null))\s+(\b(?:\d+(?:\.\d+)?|true|false|null)\b)', r'\1, \2', text)
+        
+        # 7. Fix missing commas: string followed by number/bool/null
+        text = re.sub(r'("(?:[^"\\]|\\.)*?")(\s+)(\b(?:\d+(?:\.\d+)?|true|false|null)\b)', r'\1,\2\3', text)
+        
+        # 8. Cleanup: Remove duplicate commas
+        text = re.sub(r',\s*,+', ',', text)
+        
+        # 9. Cleanup: Remove trailing commas before closing brackets
+        text = re.sub(r',(\s*[\]}])', r'\1', text)
+        
+        # If no changes were made, we're done
+        if text == original_text:
+            break
     
     return text
 
