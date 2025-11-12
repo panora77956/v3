@@ -565,7 +565,7 @@ Nếu người dùng yêu cầu một hành động (như "con mèo nói chuyệ
 """
 
 
-def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None):
+def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=None):
     # Get target language display name
     target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
 
@@ -642,9 +642,28 @@ Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của ng
 
     # OPTIMIZATION: Use concise rules for long scenarios to speed up LLM processing
     # FURTHER OPTIMIZATION: Drastically reduce prompt length for faster generation
+    # Include generic principles only when NO domain-specific prompt is provided
     if is_long_scenario:
         # Ultra-condensed version for 5+ minute videos - essential rules only
-        base_rules = f"""
+        if domain and topic:
+            # Domain-specific: Only include technical requirements
+            base_rules = f"""
+{base_role}
+
+{input_type_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
+
+{style_guidance}
+
+**TECHNICAL REQUIREMENTS**:
+1. Character visual_identity: NEVER change across scenes
+2. Scene prompts: Include full character descriptions
+3. Scene continuity: Logical connection between scenes
+"""
+        else:
+            # Generic: Include full storytelling principles
+            base_rules = f"""
 {base_role}
 
 {input_type_instruction}
@@ -662,7 +681,34 @@ Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của ng
 """
     else:
         # Optimized version for shorter videos - reduced verbosity for faster generation
-        base_rules = f"""
+        if domain and topic:
+            # Domain-specific: Only include technical requirements
+            base_rules = f"""
+{base_role}
+
+{input_type_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
+
+{style_guidance}
+
+**CHARACTER BIBLE** (2-4 characters):
+- key_trait: Core personality
+- motivation: Deep drive
+- visual_identity: Detailed appearance (face, eyes, hair, clothing, accessories) - NEVER changes
+- archetype, fatal_flaw, goals
+
+**CHARACTER CONSISTENCY (CRITICAL)**:
+- Scene prompts MUST include FULL visual_identity from character_bible
+- NEVER change appearance across scenes (face, hair, clothing, accessories)
+- Format: "[Name]: [full visual_identity], doing [action]"
+
+**SCENE CONTINUITY**: Scenes connect logically (location, time, lighting consistent)
+**STYLE CONSISTENCY**: All scenes use "{style_vi}" style consistently
+""".strip()
+        else:
+            # Generic: Include full storytelling principles
+            base_rules = f"""
 {base_role}
 
 {input_type_instruction}
@@ -1701,7 +1747,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     report_progress("Đang xây dựng prompt...", 10)
 
     # Build base prompt
-    prompt=_schema_prompt(idea=idea, style_vi=style, out_lang=output_lang, n=n, per=per, mode=mode, topic=topic)
+    prompt=_schema_prompt(idea=idea, style_vi=style, out_lang=output_lang, n=n, per=per, mode=mode, topic=topic, domain=domain)
 
     # Prepend expert intro if domain/topic selected
     if domain and topic:
