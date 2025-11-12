@@ -178,6 +178,10 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
         if "'" in cleaned and cleaned.count("'") > cleaned.count('"'):
             cleaned = cleaned.replace("'", '"')
 
+        # Remove invalid control characters (ASCII 0-31 except whitespace)
+        # This fixes the "Invalid control character" error
+        cleaned = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', cleaned)
+
         # Apply comprehensive JSON formatting fixes
         cleaned = _fix_json_formatting(cleaned)
 
@@ -193,6 +197,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
 
         if start != -1 and end != -1 and end > start:
             json_str = response_text[start:end+1]
+
+            # Remove invalid control characters
+            json_str = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', json_str)
 
             # Try to parse
             try:
@@ -1283,6 +1290,322 @@ def _validate_dialogue_language(scenes, target_lang):
 
     return True, None
 
+def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, duration, previous_scenes, character_bible, outline, provider, api_key, progress_callback):
+    """
+    Generate a single scene with context from previous scenes.
+    
+    Args:
+        scene_num: Current scene number (1-indexed)
+        total_scenes: Total number of scenes
+        idea: Original video idea
+        style: Video style
+        output_lang: Output language code
+        duration: Duration for this scene in seconds
+        previous_scenes: List of previously generated scenes for context
+        character_bible: Character bible from previous generation or empty list
+        outline: Story outline for consistency
+        provider: LLM provider
+        api_key: API key
+        progress_callback: Progress callback function
+        
+    Returns:
+        Dict with scene data
+    """
+    def report_progress(msg, percent):
+        if progress_callback:
+            progress_callback(msg, percent)
+    
+    target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
+    
+    # Build context from previous scenes
+    context = ""
+    if previous_scenes:
+        context = "\n**PREVIOUS SCENES CONTEXT (for continuity):**\n"
+        for i, prev in enumerate(previous_scenes[-3:], start=max(1, scene_num-3)):  # Last 3 scenes
+            context += f"\nScene {i}:\n"
+            context += f"- Location: {prev.get('location', 'N/A')}\n"
+            context += f"- Time: {prev.get('time_of_day', 'N/A')}\n"
+            context += f"- Characters: {', '.join(prev.get('characters', []))}\n"
+            context += f"- Emotion: {prev.get('emotion', 'N/A')}\n"
+            context += f"- Story Beat: {prev.get('story_beat', 'N/A')}\n"
+            if 'prompt_vi' in prev:
+                context += f"- Visual: {prev['prompt_vi'][:150]}...\n"
+    
+    # Build character context
+    char_context = ""
+    if character_bible:
+        char_context = "\n**CHARACTER BIBLE (maintain consistency):**\n"
+        for char in character_bible:
+            char_context += f"\n{char.get('name', 'Unknown')}:\n"
+            char_context += f"- Role: {char.get('role', '')}\n"
+            char_context += f"- Visual: {char.get('visual_identity', '')}\n"
+            char_context += f"- Trait: {char.get('key_trait', '')}\n"
+    
+    # Determine story position
+    if scene_num == 1:
+        story_position = "OPENING - Create strong hook (3s)"
+    elif scene_num == total_scenes:
+        story_position = "ENDING - Resolution/conclusion"
+    elif scene_num == total_scenes // 2:
+        story_position = "MIDPOINT - Plot twist/turning point"
+    else:
+        story_position = f"MIDDLE - Rising action (Scene {scene_num}/{total_scenes})"
+    
+    # Get style guidance
+    style_guidance = _get_style_specific_guidance(style, idea=idea)
+    
+    prompt = f"""You are an expert screenplay writer. Generate Scene {scene_num} of {total_scenes} for a video.
+
+**STORY POSITION**: {story_position}
+
+**ORIGINAL IDEA**: {idea}
+
+**STYLE**: {style}
+{style_guidance}
+
+**TARGET LANGUAGE**: {target_language}
+- ALL text_tgt, prompt_tgt fields MUST be in {target_language}
+
+**STORY OUTLINE**: {outline if outline else "Develop naturally based on idea"}
+
+{char_context}
+
+{context}
+
+**SCENE {scene_num} REQUIREMENTS**:
+- Duration: {duration} seconds
+- Connect logically to previous scene (location, time, character continuity)
+- Clear emotion and story beat
+- Specific visual details (actions, lighting, camera movement)
+- Natural dialogue in {target_language}
+
+Return ONLY valid JSON (no extra text):
+
+{{
+  "prompt_vi": "Visual description in Vietnamese with specific actions, lighting, camera",
+  "prompt_tgt": "Visual description in {target_language} with full character details",
+  "duration": {duration},
+  "characters": ["Character names appearing in this scene"],
+  "location": "Specific location",
+  "time_of_day": "Day/Night/Dawn/Dusk (consistent with previous if same location)",
+  "camera_shot": "Wide/Close-up/POV/Tracking with movement",
+  "lighting_mood": "Bright/Dark/Warm/Cold (must match time_of_day)",
+  "emotion": "Primary emotion of this scene",
+  "story_beat": "Setup/Rising action/Twist/Climax/Resolution",
+  "transition_from_previous": "How this connects to previous scene",
+  "style_notes": "Specific {style} style elements",
+  "dialogues": [
+    {{"speaker": "Name", "text_vi": "Vietnamese dialogue", "text_tgt": "Dialogue in {target_language}", "emotion": "emotion"}}
+  ],
+  "visual_notes": "Props, colors, symbolism, continuity details"
+}}
+
+CRITICAL: Maintain character visual_identity consistency. If characters appeared before, use EXACT same appearance."""
+    
+    # Call LLM
+    gk, ok = _load_keys()
+    if provider.lower().startswith("gemini"):
+        key = api_key or gk
+        if not key:
+            raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
+        
+        # Note: Progress is managed by the parent function (generate_script_scene_by_scene)
+        result = _call_gemini(prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None)
+    else:
+        key = api_key or ok
+        if not key:
+            raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
+        
+        # Note: Progress is managed by the parent function (generate_script_scene_by_scene)
+        result = _call_openai(prompt, key, "gpt-4-turbo")
+    
+    return result
+
+
+def generate_script_scene_by_scene(idea, style, duration_seconds, provider='Gemini 2.5', api_key=None, output_lang='vi', domain=None, topic=None, voice_config=None, progress_callback=None):
+    """
+    Generate video script scene-by-scene for long videos to avoid JSON truncation.
+    
+    This function generates each scene individually with context from previous scenes,
+    avoiding the issue of large JSON responses being truncated by the LLM.
+    
+    Args:
+        idea: Video idea/concept
+        style: Video style
+        duration_seconds: Total duration
+        provider: LLM provider (Gemini/OpenAI)
+        api_key: Optional API key
+        output_lang: Output language code
+        domain: Optional domain expertise
+        topic: Optional topic within domain
+        voice_config: Optional voice configuration dict
+        progress_callback: Optional function(message: str, percent: int) for progress updates
+    
+    Returns:
+        Script data dict with scenes, character_bible, etc.
+    """
+    def report_progress(msg, percent):
+        if progress_callback:
+            progress_callback(msg, percent)
+    
+    report_progress("Đang chuẩn bị scene-by-scene generation...", 5)
+    
+    gk, ok = _load_keys()
+    n, per = _n_scenes(duration_seconds)
+    mode = _mode_from_duration(duration_seconds)
+    target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
+    
+    report_progress(f"Tính toán: {n} cảnh cần tạo (total {duration_seconds}s)", 10)
+    
+    # Step 1: Generate metadata (title, character bible, outline)
+    report_progress("Đang tạo metadata (title, character bible, outline)...", 15)
+    
+    metadata_prompt = f"""You are an expert screenplay writer. Create metadata for a {duration_seconds}s video.
+
+**IDEA**: {idea}
+**STYLE**: {style}
+**MODE**: {mode} ({n} scenes)
+**TARGET LANGUAGE**: {target_language}
+
+Generate ONLY valid JSON (no extra text):
+
+{{
+  "title_vi": "Engaging Vietnamese title",
+  "title_tgt": "Title in {target_language}",
+  "hook_summary": "What makes viewer watch first 3s?",
+  "character_bible": [
+    {{
+      "name": "Character name",
+      "role": "Role in story",
+      "key_trait": "Core personality",
+      "motivation": "Deep drive",
+      "default_behavior": "Typical behavior",
+      "visual_identity": "Detailed appearance (face, eyes, hair, clothing, accessories) - NEVER changes",
+      "archetype": "Character archetype",
+      "fatal_flaw": "Character flaw",
+      "goal_external": "External goal",
+      "goal_internal": "Internal goal"
+    }}
+  ],
+  "character_bible_tgt": [
+    {{
+      "name": "Character name",
+      "role": "Role in {target_language}",
+      "key_trait": "Trait in {target_language}",
+      "motivation": "Motivation in {target_language}",
+      "default_behavior": "Behavior in {target_language}",
+      "visual_identity": "Appearance in {target_language}",
+      "archetype": "Archetype in {target_language}",
+      "fatal_flaw": "Flaw in {target_language}",
+      "goal_external": "External goal in {target_language}",
+      "goal_internal": "Internal goal in {target_language}"
+    }}
+  ],
+  "outline_vi": "Story outline in Vietnamese: ACT structure + key emotional beats + major plot points",
+  "outline_tgt": "Story outline in {target_language}",
+  "screenplay_vi": "Brief screenplay overview in Vietnamese",
+  "screenplay_tgt": "Brief screenplay overview in {target_language}",
+  "emotional_arc": "Emotional journey: [Start] → [Peaks & Valleys] → [End]"
+}}
+
+Create 2-4 characters maximum. Focus on strong, memorable characters."""
+    
+    # Call LLM for metadata
+    if provider.lower().startswith("gemini"):
+        key = api_key or gk
+        if not key:
+            raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
+        metadata = _call_gemini(metadata_prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None)
+    else:
+        key = api_key or ok
+        if not key:
+            raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
+        metadata = _call_openai(metadata_prompt, key, "gpt-4-turbo")
+    
+    report_progress("Metadata đã tạo xong", 25)
+    
+    # Step 2: Generate scenes one by one
+    scenes = []
+    character_bible = metadata.get("character_bible", [])
+    outline = metadata.get("outline_vi", "")
+    
+    for scene_num in range(1, n + 1):
+        # Calculate progress percentage (25% to 90%)
+        scene_progress = 25 + int((scene_num / n) * 65)
+        report_progress(f"Đang tạo cảnh {scene_num}/{n}...", scene_progress)
+        
+        try:
+            scene = _generate_single_scene(
+                scene_num=scene_num,
+                total_scenes=n,
+                idea=idea,
+                style=style,
+                output_lang=output_lang,
+                duration=per[scene_num - 1],
+                previous_scenes=scenes,
+                character_bible=character_bible,
+                outline=outline,
+                provider=provider,
+                api_key=api_key,
+                progress_callback=progress_callback
+            )
+            
+            # Ensure duration is set correctly
+            scene["duration"] = int(per[scene_num - 1])
+            scenes.append(scene)
+            
+            report_progress(f"✓ Cảnh {scene_num}/{n} hoàn tất", scene_progress)
+            
+        except Exception as e:
+            report_progress(f"⚠ Lỗi tại cảnh {scene_num}: {str(e)}", scene_progress)
+            # Try one more time
+            try:
+                scene = _generate_single_scene(
+                    scene_num=scene_num,
+                    total_scenes=n,
+                    idea=idea,
+                    style=style,
+                    output_lang=output_lang,
+                    duration=per[scene_num - 1],
+                    previous_scenes=scenes,
+                    character_bible=character_bible,
+                    outline=outline,
+                    provider=provider,
+                    api_key=api_key,
+                    progress_callback=progress_callback
+                )
+                scene["duration"] = int(per[scene_num - 1])
+                scenes.append(scene)
+                report_progress(f"✓ Cảnh {scene_num}/{n} hoàn tất (retry)", scene_progress)
+            except Exception as retry_error:
+                raise RuntimeError(f"Failed to generate scene {scene_num} after retry: {str(retry_error)}")
+    
+    # Step 3: Combine metadata and scenes
+    report_progress("Đang xác thực kịch bản...", 92)
+    
+    result = metadata.copy()
+    result["scenes"] = scenes
+    
+    # Run validations
+    continuity_issues = _validate_scene_continuity(scenes) if scenes else []
+    if continuity_issues:
+        print(f"[WARN] Scene continuity issues detected: {continuity_issues}")
+        result["scene_continuity_warnings"] = continuity_issues
+    
+    # Enforce character consistency
+    if character_bible:
+        report_progress("Đang tối ưu character consistency...", 95)
+        result["scenes"] = _enforce_character_consistency(scenes, character_bible)
+    
+    # Store voice configuration
+    if voice_config:
+        result["voice_config"] = voice_config
+    
+    report_progress("Hoàn tất scene-by-scene generation!", 100)
+    
+    return result
+
+
 def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_key=None, output_lang='vi', domain=None, topic=None, voice_config=None, progress_callback=None):
     """
     Generate video script with optional domain/topic expertise and voice settings
@@ -1308,6 +1631,23 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             progress_callback(msg, percent)
 
     report_progress("Đang chuẩn bị...", 5)
+
+    # OPTIMIZATION: Use scene-by-scene generation for long videos (>3 minutes)
+    # This avoids JSON truncation issues with large responses
+    if duration_seconds > 180:  # 3 minutes
+        report_progress(f"Video dài ({duration_seconds}s) - Sử dụng scene-by-scene generation", 8)
+        return generate_script_scene_by_scene(
+            idea=idea,
+            style=style,
+            duration_seconds=duration_seconds,
+            provider=provider,
+            api_key=api_key,
+            output_lang=output_lang,
+            domain=domain,
+            topic=topic,
+            voice_config=voice_config,
+            progress_callback=progress_callback
+        )
 
     gk, ok=_load_keys()
     n, per = _n_scenes(duration_seconds)

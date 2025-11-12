@@ -339,6 +339,18 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 
 ## 📊 Phiên Bản / Version History
 
+### v7.2.10 (2025-01-12) - Scene-by-Scene Generation for Long Videos
+- 🚀 **Major Feature**: Scene-by-scene generation for videos >3 minutes (180 seconds)
+- 🐛 **Critical Fix**: Resolved JSON parsing errors ("Invalid control character") for long videos
+- ✨ **Enhancement**: Support for unlimited video duration (tested up to 600s/10 minutes)
+- 📊 **Real-time Progress**: Live updates as each scene is generated (e.g., "Cảnh 5/60...")
+- 🎭 **Character Consistency**: Character bible maintained across all scenes with context from previous 3 scenes
+- 🔄 **Automatic Routing**: Videos ≤180s use traditional generation, >180s use scene-by-scene
+- 🛡️ **Error Handling**: Automatic retry for failed scene generation + control character sanitization
+- 📚 **Documentation**: Complete guide in docs/SCENE_BY_SCENE_GENERATION.md
+- ✅ **Testing**: All unit tests passed (scene calculation, control chars, workflow, routing)
+- 🔄 **Backward Compatible**: Existing code works without modification
+
 ### v7.2.9 (2025-11-10) - Vietnamese Text Overlay Fix (Complete)
 - 🐛 **Critical Fix**: Resolved text overlays and scene descriptions appearing in generated videos
 - ✨ **Enhancement**: Enhanced negative prompts now always applied to ALL video generation requests
@@ -421,6 +433,6 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 **Made with ❤️ by chamnv-dev**
 
-**Version:** 7.2.9
-**Updated:** 2025-11-10
+**Version:** 7.2.10
+**Updated:** 2025-01-12
 **Status:** ✅ Production Ready & Secure
