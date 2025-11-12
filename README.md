@@ -42,8 +42,11 @@
 - ✅ **NEW**: Ghép nhiều video thành một
 - ✅ **NEW**: Hiệu ứng chuyển cảnh (fade, wipe, slide, dissolve)
 - ✅ **NEW**: Thêm audio từ file
-- ✅ **NEW**: Xuất 4K, 8K resolution
-- ✅ **NEW**: 10+ transition effects
+- ✅ **NEW**: Xuất 4K, 8K resolution (⭐ highlighted)
+- ✅ **NEW**: 10+ transition effects (✨ marked)
+- ✅ **v1.1**: Xem video ngay sau khi ghép (preview)
+- ✅ **v1.1**: Mở video trong trình phát mặc định
+- ✅ **v1.1**: Mở thư mục chứa video
 
 ---
 
@@ -151,10 +154,11 @@ python3 main_image2video.py
 
 #### 5. **Video Merge / Ghép Video** 🆕
 - Chọn nhiều video để ghép
-- Thêm hiệu ứng chuyển cảnh
+- Thêm hiệu ứng chuyển cảnh (10+ transitions với ✨ icons)
 - Overlay audio/nhạc nền
-- Xuất ở độ phân giải cao (4K, 8K)
-- 10+ transition effects (fade, wipe, slide, dissolve)
+- Xuất ở độ phân giải cao (4K ⭐, 8K ⭐)
+- **NEW v1.1**: Xem video ngay sau khi ghép thành công
+- **NEW v1.1**: Mở video hoặc thư mục chứa video
 - **Xem thêm**: [Video Merge Feature Documentation](docs/VIDEO_MERGE_FEATURE.md)
 
 ### 📜 Lịch Sử Tạo Video / Video Creation History
@@ -353,6 +357,17 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 ---
 
 ## 📊 Phiên Bản / Version History
+
+### v7.3.1 (2025-11-12) - Video Merge v1.1 - Preview & Enhanced Visibility
+- 🎥 **NEW**: Video preview after merge completion
+- ▶️ **NEW**: "Xem Video" button - opens video in default player
+- 📂 **NEW**: "Mở Thư Mục" button - opens folder in file explorer
+- ⭐ **Enhancement**: 4K/8K options now highlighted with star icons
+- ✨ **Enhancement**: Transition effects marked with sparkle icons
+- 🎨 **Enhancement**: Improved UI visibility with colored buttons and notes
+- ⚠️ **Enhancement**: Prominent warnings for required fields
+- 📚 **Documentation**: Added VIDEO_MERGE_V1.1_CHANGELOG.md
+- 🧪 **Testing**: All UI and workflow tests passed
 
 ### v7.3.0 (2025-11-12) - Video Merge Feature & Enhanced Error Handling
 - 🎞️ **NEW FEATURE**: Video Merge Panel (Ghép video)

@@ -18,8 +18,15 @@ The **Video Merge** (Ghép video) feature allows users to combine multiple video
 - **Supported Formats**: MP4, AVI, MOV, MKV, WebM
 - **Batch Management**: Clear all videos with one click
 
-### 2. Transition Effects
-Choose from 10 professional transition effects between video scenes:
+### 2. Video Preview (NEW in v1.1.0)
+After merging completes successfully:
+- **Instant Playback**: Click "▶️ Xem Video" to open video in default player
+- **Quick Access**: Click "📂 Mở Thư Mục" to open containing folder
+- **Visual Feedback**: Success message displays output filename
+- **One-Click Access**: No need to manually navigate to output location
+
+### 3. Transition Effects
+Choose from 10 professional transition effects between video scenes (marked with ✨ icons for better visibility):
 
 | Transition | Description | Use Case |
 |------------|-------------|----------|
@@ -34,14 +41,14 @@ Choose from 10 professional transition effects between video scenes:
 | **Circle Crop** | Circular reveal effect | Creative, attention-grabbing |
 | **Dissolve** | Cross-dissolve between scenes | Classic, elegant |
 
-### 3. Audio Overlay
+### 4. Audio Overlay
 - Add background music or voiceover to the merged video
 - **Supported Formats**: MP3, WAV, AAC, M4A, OGG
 - Audio automatically syncs to video length
 - Uses shortest duration (video or audio) as final length
 
-### 4. Resolution Scaling
-Export merged videos in various resolutions:
+### 5. Resolution Scaling
+Export merged videos in various resolutions (4K/8K marked with ⭐ icons for prominence):
 
 | Resolution | Dimensions | Quality | Use Case |
 |------------|------------|---------|----------|
@@ -93,6 +100,15 @@ Export merged videos in various resolutions:
 2. Watch progress in the log viewer
 3. Click **"⏹️ Hủy"** to cancel at any time
 4. Wait for completion notification
+
+### Step 6: View Merged Video (NEW in v1.1.0)
+
+After successful merge, the **"🎥 Xem Video"** section appears with two action buttons:
+
+1. **▶️ Xem Video** - Opens the merged video in your system's default video player
+2. **📂 Mở Thư Mục** - Opens the folder containing the merged video in file explorer
+
+This allows you to immediately preview your merged video without manually navigating to the output location.
 
 ---
 
@@ -243,12 +259,16 @@ Test configuration: 3 videos × 10 seconds, 1080p source
 
 ## 🔮 Future Enhancements
 
+Completed in v1.1.0:
+- [x] Preview merged video ✅
+- [x] Open merged video in default player ✅
+- [x] Open folder containing merged video ✅
+
 Potential features for future versions:
 - [ ] Custom transition duration control
 - [ ] Audio fade in/out
 - [ ] Multiple audio tracks
 - [ ] Video trimming before merge
-- [ ] Preview merged video
 - [ ] Batch processing multiple merge jobs
 - [ ] GPU acceleration support
 - [ ] More transition effects
