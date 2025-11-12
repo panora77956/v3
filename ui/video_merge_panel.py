@@ -7,6 +7,65 @@ Allows users to:
 - Add audio from file or folder
 - Support 4K and 8K resolution output
 
+HIGH RESOLUTION VIDEO PROCESSING (1080p, 2K, 4K, 8K):
+------------------------------------------------------
+This panel supports upscaling and processing videos at various high resolutions.
+Here's a comprehensive overview:
+
+LIBRARIES USED:
+- FFmpeg (libx264 encoder): Industry-standard video processing library
+  * Supports all modern codecs and resolutions up to 8K
+  * Hardware acceleration available via libx264 GPU support
+  * Cross-platform (Windows, macOS, Linux)
+
+- ffprobe: Part of FFmpeg suite, used for video metadata extraction
+  * Gets video duration, resolution, codec information
+  * Lightweight and fast
+
+RESOLUTION SPECIFICATIONS:
+- 720p (HD): 1280x720 pixels
+- 1080p (Full HD): 1920x1080 pixels
+- 2K (QHD): 2560x1440 pixels
+- 4K (UHD): 3840x2160 pixels
+- 8K (FUHD): 7680x4320 pixels
+
+PROCESSING SPEED:
+- 720p/1080p: Fast processing, typically real-time or faster on modern hardware
+- 2K: Moderate processing, 0.5-1x real-time speed
+- 4K: Slower processing, 0.2-0.5x real-time speed (longer wait times)
+- 8K: Very slow processing, 0.1-0.3x real-time speed (requires powerful hardware)
+
+Processing time depends on:
+1. CPU/GPU capabilities (GPU acceleration recommended for 4K/8K)
+2. Video codec and complexity
+3. Number of videos being merged
+4. Transition effects applied (complex effects = slower)
+5. Available RAM (4K/8K requires significant memory)
+
+QUALITY IMPACT:
+- CRF (Constant Rate Factor) setting: 18 for high resolutions
+  * Lower CRF = higher quality but larger file size
+  * CRF 18 provides excellent quality with reasonable file sizes
+  * Suitable for 4K/8K content
+
+- Preset: 'slow' for high-res encoding
+  * Slower encoding = better compression efficiency
+  * Results in smaller files with same quality
+  * Trade-off: longer processing time for better quality
+
+- Upscaling from lower resolution:
+  * Original quality cannot be increased beyond source
+  * FFmpeg uses Lanczos scaling algorithm (high quality)
+  * Best results when source is close to target resolution
+  * Upscaling SD to 4K/8K will show artifacts
+
+RECOMMENDATIONS:
+1. For 4K/8K output: Use source videos at or near target resolution
+2. Enable hardware acceleration if available (NVIDIA NVENC, Intel QSV, AMD VCE)
+3. Ensure sufficient disk space (4K/8K files are very large)
+4. For best quality: Keep transition effects simple
+5. Monitor RAM usage: 8GB minimum for 4K, 16GB+ recommended for 8K
+
 Author: Video Super Ultra Team
 Date: 2025-11-12
 Version: 1.0.0
@@ -385,10 +444,10 @@ class VideoMergePanel(QWidget):
         row1_layout.setSpacing(15)
 
         video_group = self._create_video_section()
-        row1_layout.addWidget(video_group, stretch=2)  # Video takes more space
+        row1_layout.addWidget(video_group, stretch=1)  # Equal width
 
         audio_group = self._create_audio_section()
-        row1_layout.addWidget(audio_group, stretch=1)  # Audio takes less space
+        row1_layout.addWidget(audio_group, stretch=1)  # Equal width
 
         content_layout.addLayout(row1_layout)
 
