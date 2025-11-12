@@ -1386,6 +1386,28 @@ class Text2VideoPanelV5(QWidget):
             self._append_log("[ERR] Worker not available")
             return
 
+        # Clean up any existing thread/worker before creating new ones
+        if hasattr(self, 'thread') and self.thread:
+            try:
+                if self.thread.isRunning():
+                    self.thread.quit()
+                    self.thread.wait()
+                self.thread.deleteLater()
+            except RuntimeError:
+                # Thread already deleted
+                pass
+            finally:
+                self.thread = None
+        
+        if hasattr(self, 'worker') and self.worker:
+            try:
+                self.worker.deleteLater()
+            except RuntimeError:
+                # Worker already deleted
+                pass
+            finally:
+                self.worker = None
+
         self.thread = QThread(self)
         self.worker = _Worker(task, payload)
         self.worker.moveToThread(self.thread)
@@ -1419,13 +1441,25 @@ class Text2VideoPanelV5(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_bar.setValue(0)
 
-        # Clean up thread and worker
+        # Clean up thread and worker with proper error handling
         if hasattr(self, 'thread') and self.thread:
-            self.thread.quit()
-            self.thread.wait()
-            self.thread.deleteLater()
+            try:
+                self.thread.quit()
+                self.thread.wait()
+                self.thread.deleteLater()
+            except RuntimeError:
+                # Thread object has already been deleted by Qt
+                pass
+            finally:
+                self.thread = None
         if hasattr(self, 'worker') and self.worker:
-            self.worker.deleteLater()
+            try:
+                self.worker.deleteLater()
+            except RuntimeError:
+                # Worker object has already been deleted by Qt
+                pass
+            finally:
+                self.worker = None
 
     def _on_story_ready(self, data, ctx):
         """Handle script generation completion"""
