@@ -1409,14 +1409,14 @@ CRITICAL: Maintain character visual_identity consistency. If characters appeared
         if not key:
             raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
         
-        report_progress(f"Generating Scene {scene_num}/{total_scenes}...", None)
+        # Note: Progress is managed by the parent function (generate_script_scene_by_scene)
         result = _call_gemini(prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None)
     else:
         key = api_key or ok
         if not key:
             raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
         
-        report_progress(f"Generating Scene {scene_num}/{total_scenes}...", None)
+        # Note: Progress is managed by the parent function (generate_script_scene_by_scene)
         result = _call_openai(prompt, key, "gpt-4-turbo")
     
     return result
