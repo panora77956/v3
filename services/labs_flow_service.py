@@ -1442,8 +1442,19 @@ class LabsClient:
             st=_normalize_status(item)
             urls=_collect_urls_any(item.get("response",{})) or _collect_urls_any(item)
             vurls=[u for u in urls if "/video/" in u]; iurls=[u for u in urls if "/image/" in u]
+            
+            # Extract error information if present
+            error_info = None
+            if st == "FAILED":
+                error_obj = item.get("error", {})
+                if error_obj:
+                    error_code = error_obj.get("code", "")
+                    error_message = error_obj.get("message", "")
+                    error_info = {"code": error_code, "message": error_message}
+            
             out[key or "unknown"]={"status": ("COMPLETED" if st=="DONE" and vurls else ("DONE_NO_URL" if st=="DONE" else st)),
-                                   "video_urls": _dedup(vurls), "image_urls": _dedup(iurls), "raw": item}
+                                   "video_urls": _dedup(vurls), "image_urls": _dedup(iurls), 
+                                   "error": error_info, "raw": item}
         
         # Issue #2 FIX: Enhanced diagnostic logging
         num_returned = len(out)
