@@ -77,6 +77,14 @@ except ImportError as e:
     print(f"⚠️ Clone Video not found: {e}")
     CloneVideoPanel = None
 
+# Video Merge - NEW FEATURE
+try:
+    from ui.video_merge_panel import VideoMergePanel
+    print("✓ Loaded Video Merge Panel")
+except ImportError as e:
+    print(f"⚠️ Video Merge not found: {e}")
+    VideoMergePanel = None
+
 # Utils
 try:
     from utils import config as cfg
@@ -134,6 +142,7 @@ QTabBar::tab:nth-child(2):selected { background: #1E88E5; }  /* Image2Video - Bl
 QTabBar::tab:nth-child(3):selected { background: #26A69A; }  /* Text2Video - Teal */
 QTabBar::tab:nth-child(4):selected { background: #FF7043; }  /* Video Ads - Orange */
 QTabBar::tab:nth-child(5):selected { background: #7C4DFF; }  /* Clone Video - Deep Purple */
+QTabBar::tab:nth-child(6):selected { background: #E91E63; }  /* Video Merge - Pink */
 """
 
 
@@ -269,6 +278,17 @@ class MainWindow(QTabWidget):
             else:
                 self.clone_video = PlaceholderPanel("Clone Video")
             self.addTab(self.clone_video, "🎬 Clone Video")
+
+            # Tab 6: Video Merge
+            if VideoMergePanel:
+                try:
+                    self.video_merge = VideoMergePanel(self)
+                except Exception as e:
+                    print(f"❌ Error creating Video Merge panel: {e}")
+                    self.video_merge = PlaceholderPanel("Video Merge", str(e))
+            else:
+                self.video_merge = PlaceholderPanel("Video Merge")
+            self.addTab(self.video_merge, "🎞️ Ghép Video")
 
         except Exception as e:
             QMessageBox.critical(
