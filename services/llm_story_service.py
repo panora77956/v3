@@ -167,7 +167,13 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
             matches = re.findall(pattern, response_text, re.DOTALL)
             if matches:
                 cleaned = matches[0].strip()
-                return json.loads(cleaned)
+                # Try direct parse first
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    # If direct parse fails, apply formatting fixes
+                    cleaned = _fix_json_formatting(cleaned)
+                    return json.loads(cleaned)
     except json.JSONDecodeError as e:
         print(f"[DEBUG] {source} Strategy 2 failed (markdown extraction): {e}")
 
