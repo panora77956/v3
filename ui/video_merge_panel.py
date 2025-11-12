@@ -7,6 +7,65 @@ Allows users to:
 - Add audio from file or folder
 - Support 4K and 8K resolution output
 
+HIGH RESOLUTION VIDEO PROCESSING (1080p, 2K, 4K, 8K):
+------------------------------------------------------
+This panel supports upscaling and processing videos at various high resolutions.
+Here's a comprehensive overview:
+
+LIBRARIES USED:
+- FFmpeg (libx264 encoder): Industry-standard video processing library
+  * Supports all modern codecs and resolutions up to 8K
+  * Hardware acceleration available via libx264 GPU support
+  * Cross-platform (Windows, macOS, Linux)
+
+- ffprobe: Part of FFmpeg suite, used for video metadata extraction
+  * Gets video duration, resolution, codec information
+  * Lightweight and fast
+
+RESOLUTION SPECIFICATIONS:
+- 720p (HD): 1280x720 pixels
+- 1080p (Full HD): 1920x1080 pixels
+- 2K (QHD): 2560x1440 pixels
+- 4K (UHD): 3840x2160 pixels
+- 8K (FUHD): 7680x4320 pixels
+
+PROCESSING SPEED:
+- 720p/1080p: Fast processing, typically real-time or faster on modern hardware
+- 2K: Moderate processing, 0.5-1x real-time speed
+- 4K: Slower processing, 0.2-0.5x real-time speed (longer wait times)
+- 8K: Very slow processing, 0.1-0.3x real-time speed (requires powerful hardware)
+
+Processing time depends on:
+1. CPU/GPU capabilities (GPU acceleration recommended for 4K/8K)
+2. Video codec and complexity
+3. Number of videos being merged
+4. Transition effects applied (complex effects = slower)
+5. Available RAM (4K/8K requires significant memory)
+
+QUALITY IMPACT:
+- CRF (Constant Rate Factor) setting: 18 for high resolutions
+  * Lower CRF = higher quality but larger file size
+  * CRF 18 provides excellent quality with reasonable file sizes
+  * Suitable for 4K/8K content
+
+- Preset: 'slow' for high-res encoding
+  * Slower encoding = better compression efficiency
+  * Results in smaller files with same quality
+  * Trade-off: longer processing time for better quality
+
+- Upscaling from lower resolution:
+  * Original quality cannot be increased beyond source
+  * FFmpeg uses Lanczos scaling algorithm (high quality)
+  * Best results when source is close to target resolution
+  * Upscaling SD to 4K/8K will show artifacts
+
+RECOMMENDATIONS:
+1. For 4K/8K output: Use source videos at or near target resolution
+2. Enable hardware acceleration if available (NVIDIA NVENC, Intel QSV, AMD VCE)
+3. Ensure sufficient disk space (4K/8K files are very large)
+4. For best quality: Keep transition effects simple
+5. Monitor RAM usage: 8GB minimum for 4K, 16GB+ recommended for 8K
+
 Author: Video Super Ultra Team
 Date: 2025-11-12
 Version: 1.0.0
@@ -111,6 +170,18 @@ class VideoMergeWorker(QThread):
         """Simple concatenation without transitions"""
         self.progress.emit("📝 Tạo danh sách video...")
 
+        # Ensure output directory exists and is writable
+        output_dir = os.path.dirname(self.output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                self.progress.emit(f"✅ Đã tạo thư mục: {output_dir}")
+            except OSError as e:
+                raise RuntimeError(f"Không thể tạo thư mục đích: {str(e)}")
+
+        if output_dir and not os.access(output_dir, os.W_OK):
+            raise RuntimeError(f"Không có quyền ghi vào thư mục: {output_dir}")
+
         # Create temporary concat file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             concat_file = f.name
@@ -146,9 +217,12 @@ class VideoMergeWorker(QThread):
 
             # Move temp file to final output
             if os.path.exists(temp_output):
-                if os.path.exists(self.output_path):
-                    os.remove(self.output_path)
-                os.rename(temp_output, self.output_path)
+                try:
+                    if os.path.exists(self.output_path):
+                        os.remove(self.output_path)
+                    os.rename(temp_output, self.output_path)
+                except OSError as e:
+                    raise RuntimeError(f"Không thể lưu file video: {str(e)}")
 
         finally:
             # Clean up temp file
@@ -160,6 +234,18 @@ class VideoMergeWorker(QThread):
     def _merge_with_transitions(self):
         """Merge videos with transition effects"""
         self.progress.emit(f"🎨 Thêm hiệu ứng chuyển cảnh '{self.transition}'...")
+
+        # Ensure output directory exists and is writable
+        output_dir = os.path.dirname(self.output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                self.progress.emit(f"✅ Đã tạo thư mục: {output_dir}")
+            except OSError as e:
+                raise RuntimeError(f"Không thể tạo thư mục đích: {str(e)}")
+
+        if output_dir and not os.access(output_dir, os.W_OK):
+            raise RuntimeError(f"Không có quyền ghi vào thư mục: {output_dir}")
 
         # Map transition names to xfade filter types
         transition_map = {
@@ -244,9 +330,12 @@ class VideoMergeWorker(QThread):
 
         # Move temp file to final output
         if os.path.exists(temp_output):
-            if os.path.exists(self.output_path):
-                os.remove(self.output_path)
-            os.rename(temp_output, self.output_path)
+            try:
+                if os.path.exists(self.output_path):
+                    os.remove(self.output_path)
+                os.rename(temp_output, self.output_path)
+            except OSError as e:
+                raise RuntimeError(f"Không thể lưu file video: {str(e)}")
 
     def _add_audio(self):
         """Add audio track to video"""
@@ -254,7 +343,10 @@ class VideoMergeWorker(QThread):
             return
 
         temp_input = self.output_path + ".temp_video.mp4"
-        os.rename(self.output_path, temp_input)
+        try:
+            os.rename(self.output_path, temp_input)
+        except OSError as e:
+            raise RuntimeError(f"Không thể tạo file tạm: {str(e)}")
 
         # Build ffmpeg command to add audio
         cmd = [
@@ -279,7 +371,10 @@ class VideoMergeWorker(QThread):
 
         if result.returncode != 0:
             # Restore original if failed
-            os.rename(temp_input, self.output_path)
+            try:
+                os.rename(temp_input, self.output_path)
+            except OSError:
+                pass
             raise RuntimeError(f"Failed to add audio: {result.stderr}")
 
         # Clean up temp file
@@ -303,7 +398,10 @@ class VideoMergeWorker(QThread):
             return
 
         temp_input = self.output_path + ".temp_scale.mp4"
-        os.rename(self.output_path, temp_input)
+        try:
+            os.rename(self.output_path, temp_input)
+        except OSError as e:
+            raise RuntimeError(f"Không thể tạo file tạm: {str(e)}")
 
         # Build ffmpeg command to scale
         cmd = [
@@ -327,7 +425,10 @@ class VideoMergeWorker(QThread):
 
         if result.returncode != 0:
             # Restore original if failed
-            os.rename(temp_input, self.output_path)
+            try:
+                os.rename(temp_input, self.output_path)
+            except OSError:
+                pass
             raise RuntimeError(f"Failed to scale resolution: {result.stderr}")
 
         # Clean up temp file
@@ -385,10 +486,10 @@ class VideoMergePanel(QWidget):
         row1_layout.setSpacing(15)
 
         video_group = self._create_video_section()
-        row1_layout.addWidget(video_group, stretch=2)  # Video takes more space
+        row1_layout.addWidget(video_group, stretch=1)  # Equal width
 
         audio_group = self._create_audio_section()
-        row1_layout.addWidget(audio_group, stretch=1)  # Audio takes less space
+        row1_layout.addWidget(audio_group, stretch=1)  # Equal width
 
         content_layout.addLayout(row1_layout)
 
@@ -567,7 +668,7 @@ class VideoMergePanel(QWidget):
         """)
         path_row.addWidget(self.output_path)
 
-        self.btn_browse_output = QPushButton("📁 Chọn thư mục")
+        self.btn_browse_output = QPushButton("📁 Chọn vị trí lưu")
         self.btn_browse_output.setMinimumHeight(36)
         self.btn_browse_output.setStyleSheet("""
             QPushButton {
@@ -588,7 +689,7 @@ class VideoMergePanel(QWidget):
         layout.addLayout(path_row)
 
         # Important note
-        note = QLabel("⚠️ BẮT BUỘC: Phải chọn thư mục lưu video trước khi ghép")
+        note = QLabel("⚠️ BẮT BUỘC: Phải chọn vị trí và tên file để lưu video trước khi ghép")
         note.setStyleSheet("color: #F44336; font-weight: bold; font-size: 12px; margin-top: 5px;")
         layout.addWidget(note)
 
@@ -797,7 +898,7 @@ class VideoMergePanel(QWidget):
         """Browse output location"""
         file, _ = QFileDialog.getSaveFileName(
             self,
-            "Chọn vị trí lưu video",
+            "Chọn vị trí và tên file để lưu video",
             "",
             "MP4 Video (*.mp4)"
         )
@@ -805,6 +906,30 @@ class VideoMergePanel(QWidget):
         if file:
             if not file.endswith('.mp4'):
                 file += '.mp4'
+
+            # Check if directory exists and is writable
+            output_dir = os.path.dirname(file)
+            if output_dir and not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self._append_log(f"✅ Đã tạo thư mục: {output_dir}")
+                except OSError as e:
+                    QMessageBox.warning(
+                        self,
+                        "Lỗi tạo thư mục",
+                        f"Không thể tạo thư mục:\n{output_dir}\n\nLỗi: {str(e)}"
+                    )
+                    return
+
+            # Check if directory is writable
+            if output_dir and not os.access(output_dir, os.W_OK):
+                QMessageBox.warning(
+                    self,
+                    "Lỗi quyền truy cập",
+                    f"Không có quyền ghi vào thư mục:\n{output_dir}\n\nVui lòng chọn thư mục khác."
+                )
+                return
+
             self.output_path.setText(file)
 
     def _update_video_count(self):
