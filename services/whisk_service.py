@@ -937,3 +937,193 @@ def rename_project(project_id: str, new_name: str, log_callback: Optional[Callab
     except Exception as e:
         log(f"[ERROR] Rename project failed - {str(e)[:200]}")
         return None
+
+
+def refine_image(
+    base64_image: str,
+    existing_prompt: str,
+    new_refinement: str,
+    project_id: str,
+    image_id: str,
+    image_model: str = "IMAGEN_3_5",
+    aspect_ratio: str = "IMAGE_ASPECT_RATIO_LANDSCAPE",
+    seed: int = 0,
+    count: int = 1,
+    log_callback: Optional[Callable] = None
+) -> Optional[bytes]:
+    """
+    Refine an existing generated image with new prompt
+    
+    This follows a 2-step process:
+    1. Generate a rewritten prompt that combines existing prompt with refinement
+    2. Generate new image using the rewritten prompt
+    
+    Args:
+        base64_image: Base64 encoded image to refine
+        existing_prompt: Original prompt used to generate the image
+        new_refinement: New refinement instructions
+        project_id: Project ID where image was generated
+        image_id: ID of the image to refine
+        image_model: Model to use (IMAGEN_2, IMAGEN_3, IMAGEN_3_5, IMAGEN_4)
+        aspect_ratio: Aspect ratio for refined image
+        seed: Random seed
+        count: Number of images to generate (default: 1)
+        log_callback: Optional logging callback
+        
+    Returns:
+        Refined image as bytes or None if failed
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        log("[INFO] Whisk: Starting image refinement...")
+        
+        # Step 1: Generate rewritten prompt
+        cookies = get_session_cookies()
+        bearer_token = get_bearer_token()
+        
+        url1 = "https://labs.google/fx/api/trpc/backbone.generateRewrittenPrompt"
+        
+        headers1 = {
+            "Content-Type": "application/json",
+            "Cookie": cookies,
+            "Origin": "https://labs.google",
+            "Referer": "https://labs.google/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload1 = {
+            "json": {
+                "existingPrompt": existing_prompt,
+                "textInput": new_refinement,
+                "editingImage": {
+                    "imageId": image_id,
+                    "base64Image": base64_image,
+                    "category": "STORYBOARD",
+                    "prompt": existing_prompt,
+                    "mediaKey": image_id,
+                    "isLoading": False,
+                    "isFavorite": None,
+                    "isActive": True,
+                    "isPreset": False,
+                    "isSelected": False,
+                    "index": 0,
+                    "imageObjectUrl": f"blob:https://labs.google/{str(uuid.uuid4())}",
+                    "recipeInput": {
+                        "mediaInputs": [],
+                        "userInput": {
+                            "userInstructions": existing_prompt
+                        }
+                    },
+                    "currentImageAction": "REFINING",
+                    "seed": seed
+                },
+                "sessionId": f";{int(time.time() * 1000)}"
+            },
+            "meta": {
+                "values": {
+                    "editingImage.isFavorite": ["undefined"]
+                }
+            }
+        }
+        
+        log("[INFO] Whisk: Generating rewritten prompt...")
+        response1 = requests.post(url1, json=payload1, headers=headers1, timeout=60)
+        
+        if response1.status_code != 200:
+            log(f"[ERROR] Generate rewritten prompt failed with status {response1.status_code}")
+            return None
+        
+        data1 = response1.json()
+        
+        # Parse rewritten prompt
+        try:
+            if 'error' in data1:
+                log(f"[ERROR] Refinement failed: {data1['error']}")
+                return None
+            
+            new_prompt = data1['result']['data']['json']
+            log(f"[INFO] Whisk: Got rewritten prompt ({len(new_prompt)} chars)")
+        except (KeyError, TypeError):
+            log(f"[ERROR] Failed to parse rewritten prompt")
+            return None
+        
+        # Step 2: Generate new image with rewritten prompt
+        url2 = "https://aisandbox-pa.googleapis.com/v1:runBackboneImageGeneration"
+        
+        headers2 = {
+            "Content-Type": "text/plain;charset=UTF-8",
+            "Authorization": f"Bearer {bearer_token}",
+            "Origin": "https://labs.google",
+            "Referer": "https://labs.google/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload2 = {
+            "userInput": {
+                "candidatesCount": count,
+                "seed": seed,
+                "prompts": [new_prompt],
+                "mediaCategory": "MEDIA_CATEGORY_BOARD",
+                "recipeInput": {
+                    "userInput": {
+                        "userInstructions": new_prompt,
+                    },
+                    "mediaInputs": []
+                }
+            },
+            "clientContext": {
+                "sessionId": f";{int(time.time() * 1000)}",
+                "tool": "BACKBONE",
+                "workflowId": project_id,
+            },
+            "modelInput": {
+                "modelNameType": image_model
+            },
+            "aspectRatio": aspect_ratio
+        }
+        
+        log("[INFO] Whisk: Generating refined image...")
+        response2 = requests.post(url2, json=payload2, headers=headers2, timeout=120)
+        
+        if response2.status_code != 200:
+            log(f"[ERROR] Refined image generation failed with status {response2.status_code}")
+            return None
+        
+        data2 = response2.json()
+        
+        # Parse refined image
+        try:
+            if 'error' in data2:
+                log(f"[ERROR] Refinement failed: {data2['error']}")
+                return None
+            
+            # Response structure: {"imagePanels": [{"generatedImages": [{"encodedImage": "base64..."}]}]}
+            if 'imagePanels' in data2:
+                panels = data2['imagePanels']
+                if panels and len(panels) > 0:
+                    panel = panels[0]
+                    if 'generatedImages' in panel:
+                        images = panel['generatedImages']
+                        if images and len(images) > 0:
+                            encoded_image = images[0].get('encodedImage')
+                            if encoded_image:
+                                img_bytes = base64.b64decode(encoded_image)
+                                log("[INFO] Whisk: Image refinement complete!")
+                                return img_bytes
+            
+            log("[ERROR] Whisk: No refined image data in response")
+            return None
+            
+        except (KeyError, TypeError, IndexError) as e:
+            log(f"[ERROR] Whisk: Failed to parse refined image - {str(e)}")
+            return None
+    
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return None
+    except Exception as e:
+        log(f"[ERROR] Whisk: Image refinement failed - {str(e)[:200]}")
+        return None

@@ -88,9 +88,18 @@ pip install -r requirements.txt
 - See **[OAuth Token Guide](docs/OAUTH_TOKEN_GUIDE.md)** for detailed instructions
 - Quick method: Open DevTools on labs.google → Network tab → Copy bearer token from requests
 
-**🎨 Whisk Authentication (NEW - for Image Generation):**
+**🎨 Whisk Authentication (ENHANCED - Complete Image Generation API):**
 
-Whisk requires **two types of authentication** from labs.google.com:
+Whisk now supports **complete image generation features** based on [rohitaryal/whisk-api](https://github.com/rohitaryal/whisk-api):
+
+**Features:**
+- ✅ Text-to-image generation (no reference images needed)
+- ✅ Reference image generation (with model/product images)
+- ✅ Image refinement and enhancement
+- ✅ Project management (create, list, delete, rename)
+- ✅ Multiple Imagen models (2, 3, 3.5, 4)
+
+**Authentication Requirements:**
 
 1. **Session Token** (`labs_session_token`):
    - Cookie: `__Secure-next-auth.session-token`
@@ -101,6 +110,8 @@ Whisk requires **two types of authentication** from labs.google.com:
    - Get from: DevTools → Network → Authorization header on https://labs.google/fx/tools/whisk
 
 Both can be configured via **Settings → Whisk Authentication** in the UI.
+
+**📚 Documentation:** See [Whisk Service Enhanced Guide](docs/WHISK_SERVICE_ENHANCED.md) for complete API reference and examples.
 
 **📁 Where are tokens stored?**
 - See **[Token Storage Documentation](docs/TOKEN_STORAGE.md)** for complete details
@@ -359,6 +370,16 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 
 ## 📊 Phiên Bản / Version History
 
+### v7.3.3 (2025-11-12) - Enhanced Whisk Service (Complete API)
+- 🎨 **NEW**: Text-to-image generation without reference images (`generate_image_text_only()`)
+- 🎨 **NEW**: Image refinement feature (`refine_image()`)
+- 📁 **NEW**: Project management (create, list, delete, rename projects)
+- ✨ **Enhancement**: Support for all Imagen models (2, 3, 3.5, 4)
+- 🔧 **Integration**: Auto-select generation method in Video Ban Hang panel
+- 📚 **Documentation**: Complete API reference in [WHISK_SERVICE_ENHANCED.md](docs/WHISK_SERVICE_ENHANCED.md)
+- 📚 **Examples**: Added comprehensive usage examples in `examples/whisk_examples.py`
+- 🔄 **Based on**: [rohitaryal/whisk-api](https://github.com/rohitaryal/whisk-api) TypeScript implementation
+
 ### v7.3.2 (2025-11-12) - Video Merge UI Reorganization
 - 🎨 **UI Enhancement**: Reorganized video merge panel into 2-row layout
 - 📐 **Layout**: Row 1: Video Files (66%) | Audio (33%) side-by-side
@@ -483,6 +504,6 @@ MIT License - See [LICENSE](LICENSE) file for details
 
 **Made with ❤️ by chamnv-dev**
 
-**Version:** 7.3.2
+**Version:** 7.3.3
 **Updated:** 2025-11-12
 **Status:** ✅ Production Ready & Secure
