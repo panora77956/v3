@@ -548,3 +548,392 @@ def generate_image(prompt: str, model_image: Optional[str] = None, product_image
     except Exception as e:
         log(f"[ERROR] Whisk: Unexpected error - {str(e)[:100]}")
         return None
+
+
+def generate_image_text_only(
+    prompt: str,
+    project_id: Optional[str] = None,
+    image_model: str = "IMAGEN_3_5",
+    aspect_ratio: str = "IMAGE_ASPECT_RATIO_PORTRAIT",
+    seed: int = 0,
+    log_callback: Optional[Callable] = None
+) -> Optional[bytes]:
+    """
+    Generate image using Whisk with text prompt only (no reference images)
+    
+    This is a simpler API that doesn't require reference images.
+    Based on rohitaryal/whisk-api implementation.
+    
+    Args:
+        prompt: Text prompt for image generation
+        project_id: Optional project ID. If None, a new project will be created
+        image_model: Model to use (IMAGEN_2, IMAGEN_3, IMAGEN_3_5, IMAGEN_4, etc.)
+        aspect_ratio: Aspect ratio (IMAGE_ASPECT_RATIO_PORTRAIT, IMAGE_ASPECT_RATIO_LANDSCAPE, IMAGE_ASPECT_RATIO_SQUARE)
+        seed: Random seed for reproducibility (default: 0)
+        log_callback: Optional logging callback
+        
+    Returns:
+        Generated image as bytes or None if failed
+        
+    Available Models:
+        - IMAGEN_2: Second generation model
+        - IMAGEN_3: Third generation model  
+        - IMAGEN_3_5: Enhanced version of Imagen 3 (default, actually Imagen 4)
+        - IMAGEN_4: Latest generation model
+        - IMAGEN_3_PORTRAIT: Portrait-optimized
+        - IMAGEN_3_LANDSCAPE: Landscape-optimized
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        log("[INFO] Whisk: Starting text-only generation...")
+        
+        # Get bearer token for authentication
+        bearer_token = get_bearer_token()
+        
+        # Create project if not provided
+        if not project_id:
+            log("[INFO] Whisk: Creating new project...")
+            project_id = create_project("New Project", log_callback)
+            if not project_id:
+                log("[ERROR] Whisk: Failed to create project")
+                return None
+            log(f"[INFO] Whisk: Created project {project_id}")
+        
+        # Generate workflow ID and session ID
+        workflow_id = project_id
+        session_id = f";{int(time.time() * 1000)}"
+        
+        url = "https://aisandbox-pa.googleapis.com/v1/whisk:generateImage"
+        
+        headers = {
+            "authorization": f"Bearer {bearer_token}",
+            "content-type": "application/json",
+            "origin": "https://labs.google",
+            "referer": "https://labs.google/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload = {
+            "clientContext": {
+                "workflowId": workflow_id,
+                "tool": "BACKBONE",
+                "sessionId": session_id
+            },
+            "imageModelSettings": {
+                "imageModel": image_model,
+                "aspectRatio": aspect_ratio,
+            },
+            "seed": seed,
+            "prompt": prompt,
+            "mediaCategory": "MEDIA_CATEGORY_BOARD"
+        }
+        
+        log(f"[INFO] Whisk: Generating with {image_model}...")
+        log(f"[DEBUG] Aspect ratio: {aspect_ratio}, Seed: {seed}")
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=120)
+        
+        if response.status_code != 200:
+            log(f"[ERROR] Whisk generation failed with status {response.status_code}")
+            try:
+                error_data = response.json()
+                if 'error' in error_data:
+                    log(f"[ERROR] Error: {error_data['error']}")
+            except:
+                pass
+            return None
+        
+        data = response.json()
+        
+        # Parse response to get generated image
+        # Response structure: {"imagePanels": [{"generatedImages": [{"encodedImage": "base64..."}]}]}
+        try:
+            if 'imagePanels' in data:
+                panels = data['imagePanels']
+                if panels and len(panels) > 0:
+                    panel = panels[0]
+                    if 'generatedImages' in panel:
+                        images = panel['generatedImages']
+                        if images and len(images) > 0:
+                            encoded_image = images[0].get('encodedImage')
+                            if encoded_image:
+                                # Decode base64 image
+                                img_bytes = base64.b64decode(encoded_image)
+                                log("[INFO] Whisk: Image generation complete!")
+                                return img_bytes
+            
+            log("[ERROR] Whisk: No image data in response")
+            log(f"[DEBUG] Response keys: {list(data.keys())}")
+            return None
+            
+        except (KeyError, TypeError, IndexError) as e:
+            log(f"[ERROR] Whisk: Failed to parse response - {str(e)}")
+            return None
+    
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return None
+    except Exception as e:
+        log(f"[ERROR] Whisk: Text generation failed - {str(e)[:200]}")
+        return None
+
+
+def create_project(title: str, log_callback: Optional[Callable] = None) -> Optional[str]:
+    """
+    Create a new Whisk project
+    
+    Args:
+        title: Project title/name
+        log_callback: Optional logging callback
+        
+    Returns:
+        Project ID (workflow ID) or None if failed
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        cookies = get_session_cookies()
+        
+        url = "https://labs.google/fx/api/trpc/media.createOrUpdateWorkflow"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": cookies,
+            "Origin": "https://labs.google",
+            "Referer": "https://labs.google/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload = {
+            "json": {
+                "clientContext": {
+                    "tool": "BACKBONE",
+                    "sessionId": f";{int(time.time() * 1000)}"
+                },
+                "workflowMetadata": {
+                    "workflowName": title
+                }
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        
+        if response.status_code != 200:
+            log(f"[ERROR] Project creation failed with status {response.status_code}")
+            return None
+        
+        data = response.json()
+        
+        # Parse project ID from response
+        try:
+            workflow_id = data['result']['data']['json']['result']['workflowId']
+            return workflow_id
+        except (KeyError, TypeError):
+            log(f"[ERROR] Failed to parse project ID from response")
+            return None
+            
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return None
+    except Exception as e:
+        log(f"[ERROR] Project creation failed - {str(e)[:200]}")
+        return None
+
+
+def get_project_history(limit: int = 20, log_callback: Optional[Callable] = None) -> Optional[list]:
+    """
+    Get project history
+    
+    Args:
+        limit: Maximum number of projects to retrieve
+        log_callback: Optional logging callback
+        
+    Returns:
+        List of projects or None if failed
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        cookies = get_session_cookies()
+        
+        req_json = {
+            "json": {
+                "rawQuery": "",
+                "type": "BACKBONE",
+                "subtype": "PROJECT",
+                "limit": limit,
+                "cursor": None
+            },
+            "meta": {
+                "values": {
+                    "cursor": ["undefined"]
+                }
+            }
+        }
+        
+        url = f"https://labs.google/fx/api/trpc/media.fetchUserHistory?input={json.dumps(req_json)}"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": cookies,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=60)
+        
+        if response.status_code != 200:
+            log(f"[ERROR] Get project history failed with status {response.status_code}")
+            return None
+        
+        data = response.json()
+        
+        # Parse projects from response
+        try:
+            workflows = data['result']['data']['json']['result']['userWorkflows']
+            return workflows
+        except (KeyError, TypeError):
+            log(f"[ERROR] Failed to parse project history from response")
+            return None
+            
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return None
+    except Exception as e:
+        log(f"[ERROR] Get project history failed - {str(e)[:200]}")
+        return None
+
+
+def delete_projects(project_ids: list, log_callback: Optional[Callable] = None) -> bool:
+    """
+    Delete projects
+    
+    Args:
+        project_ids: List of project IDs to delete
+        log_callback: Optional logging callback
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        cookies = get_session_cookies()
+        
+        url = "https://labs.google/fx/api/trpc/media.deleteMedia"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": cookies,
+            "Origin": "https://labs.google",
+            "Referer": "https://labs.google/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload = {
+            "json": {
+                "parent": "userProject/",
+                "names": project_ids
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        
+        if response.status_code != 200:
+            log(f"[ERROR] Delete projects failed with status {response.status_code}")
+            return False
+        
+        data = response.json()
+        
+        # Check for errors in response
+        if 'error' in data:
+            log(f"[ERROR] Delete failed: {data['error']}")
+            return False
+        
+        return True
+        
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return False
+    except Exception as e:
+        log(f"[ERROR] Delete projects failed - {str(e)[:200]}")
+        return False
+
+
+def rename_project(project_id: str, new_name: str, log_callback: Optional[Callable] = None) -> Optional[str]:
+    """
+    Rename a project
+    
+    Args:
+        project_id: Project ID to rename
+        new_name: New name for the project
+        log_callback: Optional logging callback
+        
+    Returns:
+        Project ID if successful, None otherwise
+    """
+    def log(msg):
+        if log_callback:
+            log_callback(msg)
+    
+    try:
+        cookies = get_session_cookies()
+        
+        url = "https://labs.google/fx/api/trpc/media.createOrUpdateWorkflow"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Cookie": cookies,
+            "Origin": "https://labs.google",
+            "Referer": "https://labs.google/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        payload = {
+            "json": {
+                "workflowId": project_id,
+                "clientContext": {
+                    "sessionId": f";{int(time.time() * 1000)}",
+                    "tool": "BACKBONE",
+                    "workflowId": project_id
+                },
+                "workflowMetadata": {
+                    "workflowName": new_name
+                }
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        
+        if response.status_code != 200:
+            log(f"[ERROR] Rename project failed with status {response.status_code}")
+            return None
+        
+        data = response.json()
+        
+        # Parse response
+        try:
+            if 'error' in data:
+                log(f"[ERROR] Rename failed: {data['error']}")
+                return None
+            
+            workflow_id = data['result']['data']['json']['result']['workflowId']
+            return workflow_id
+        except (KeyError, TypeError):
+            log(f"[ERROR] Failed to parse rename response")
+            return None
+            
+    except WhiskError as e:
+        log(f"[ERROR] Whisk configuration error: {str(e)}")
+        return None
+    except Exception as e:
+        log(f"[ERROR] Rename project failed - {str(e)[:200]}")
+        return None
