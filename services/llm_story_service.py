@@ -46,14 +46,14 @@ def _n_scenes(total_seconds:int):
         tuple: (number_of_scenes, list_of_scene_durations)
     """
     total=max(3, int(total_seconds or 30))
-    
+
     # For long videos (>120s), use exact division without rounding up
     if total > 120:
         n = max(1, total // 8)
     else:
         # For shorter videos, use original formula with rounding up
         n = max(1, (total+7)//8)
-    
+
     # Distribute duration: all scenes are 8s except the last one gets remainder
     per=[8]*(n-1)+[max(1,total-8*(n-1))]
     return n, per
@@ -972,7 +972,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     # All retries and fallback models exhausted
     if last_error:
         # Check if it's a timeout error and provide helpful message
-        if isinstance(last_error, (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)):
+        if isinstance(
+            last_error,
+            (requests.exceptions.Timeout, requests.exceptions.ReadTimeout)
+        ):
             raise RuntimeError(
                 f"Gemini API request timed out after {timeout}s (tried {max_attempts} attempts across {len(models_to_try)} models). "
                 f"For long scripts ({duration_seconds}s), generation can take several minutes. "
@@ -982,9 +985,17 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 f"(4) Consider breaking the script into shorter segments."
             ) from last_error
         # Check if it's a 503 error and provide helpful message
-        elif (isinstance(last_error, requests.exceptions.HTTPError) and 
-              ((hasattr(last_error, 'response') and last_error.response is not None and last_error.response.status_code == 503) or 
-               "503" in str(last_error))):
+        elif (
+            isinstance(last_error, requests.exceptions.HTTPError) and
+            (
+                (
+                    hasattr(last_error, 'response') and
+                    last_error.response is not None and
+                    last_error.response.status_code == 503
+                ) or
+                "503" in str(last_error)
+            )
+        ):
             raise RuntimeError(
                 f"Gemini API service unavailable after {max_attempts} attempts with {len(models_to_try)} models (HTTP 503). "
                 f"This error indicates that Google's Gemini servers are temporarily overloaded or under maintenance. "
@@ -1314,7 +1325,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             from services.domain_prompts import build_expert_intro
             # Map language code to vi/en for domain prompts
             prompt_lang = "vi" if output_lang == "vi" else "en"
-            
+
             # OPTIMIZATION: Use cached domain prompt if available
             cache_key = f"{domain}|{topic}|{prompt_lang}"
             if cache_key in _domain_prompt_cache:
@@ -1322,7 +1333,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             else:
                 expert_intro = build_expert_intro(domain, topic, prompt_lang)
                 _domain_prompt_cache[cache_key] = expert_intro
-            
+
             prompt = f"{expert_intro}\n\n{prompt}"
         except Exception as e:
             # Log but don't fail if domain prompt loading fails
@@ -1332,7 +1343,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     if provider.lower().startswith("gemini"):
         key=api_key or gk
         if not key: raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
-        
+
         # OPTIMIZATION: More informative progress for long scenarios
         # Updated message to reflect improved timeout and retry logic
         if duration_seconds > 300:  # 5+ minutes
@@ -1347,7 +1358,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     else:
         key=api_key or ok
         if not key: raise RuntimeError("Chưa cấu hình OpenAI API Key cho GPT-4 Turbo.")
-        
+
         # OPTIMIZATION: More informative progress for long scenarios
         # Updated to reflect actual performance
         if duration_seconds > 300:
@@ -1356,7 +1367,7 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 30-60 giây)", 25)
         else:
             report_progress("Đang chờ phản hồi từ OpenAI... (có thể mất 20-40 giây)", 25)
-        
+
         # FIXED: Use gpt-4-turbo instead of gpt-5
         res=_call_openai(prompt,key,"gpt-4-turbo")
         report_progress("Đã nhận phản hồi từ OpenAI", 50)
@@ -1367,10 +1378,10 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     # OPTIMIZATION: Run all validation checks in parallel using ThreadPoolExecutor
     # This reduces validation time from ~2-3 seconds to <1 second
     import concurrent.futures
-    
+
     scenes = res.get("scenes", [])
     character_bible = res.get("character_bible", [])
-    
+
     # Define validation tasks
     def validate_duplicates():
         duplicates = _validate_scene_uniqueness(scenes, similarity_threshold=0.8)
@@ -1378,46 +1389,46 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             dup_msg = ", ".join([f"Scene {i} & {j} ({sim*100:.0f}% similar)" for i, j, sim in duplicates])
             print(f"[WARN] Duplicate scenes detected: {dup_msg}")
         return duplicates
-    
+
     def validate_relevance():
         is_relevant, relevance_score, warning_msg = _validate_idea_relevance(idea, res, threshold=IDEA_RELEVANCE_THRESHOLD)
         if not is_relevant and warning_msg:
             print(warning_msg)
         return is_relevant, relevance_score, warning_msg
-    
+
     def validate_dialogues():
         dialogue_valid, dialogue_warning = _validate_dialogue_language(scenes, output_lang)
         if not dialogue_valid and dialogue_warning:
             print(dialogue_warning)
         return dialogue_valid, dialogue_warning
-    
+
     def validate_continuity():
         continuity_issues = _validate_scene_continuity(scenes) if scenes else []
         if continuity_issues:
             print(f"[WARN] Scene continuity issues detected: {continuity_issues}")
         return continuity_issues
-    
+
     # Run all validations in parallel
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_duplicates = executor.submit(validate_duplicates)
         future_relevance = executor.submit(validate_relevance)
         future_dialogues = executor.submit(validate_dialogues)
         future_continuity = executor.submit(validate_continuity)
-        
+
         # Wait for all to complete
         duplicates = future_duplicates.result()
         is_relevant, relevance_score, warning_msg = future_relevance.result()
         dialogue_valid, dialogue_warning = future_dialogues.result()
         continuity_issues = future_continuity.result()
-    
+
     # Store validation results
     if not is_relevant and warning_msg:
         res["idea_relevance_warning"] = warning_msg
     res["idea_relevance_score"] = relevance_score
-    
+
     if not dialogue_valid and dialogue_warning:
         res["dialogue_language_warning"] = dialogue_warning
-    
+
     if continuity_issues:
         res["scene_continuity_warnings"] = continuity_issues
 
