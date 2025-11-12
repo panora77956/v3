@@ -5,11 +5,11 @@ Extract key frames from video using ffmpeg scene detection
 """
 
 import os
-import shutil
 import subprocess
 import tempfile
 from typing import List, Dict
 import json
+from utils.safe_remove import safe_cleanup_temp_dir
 
 
 class SceneDetector:
@@ -85,8 +85,7 @@ class SceneDetector:
 
         except Exception as e:
             # Clean up temp directory on error
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            safe_cleanup_temp_dir(temp_dir, log_callback=self.log)
             raise RuntimeError(f"Scene extraction failed: {e}")
 
     def _get_video_duration(self, video_path: str) -> float:

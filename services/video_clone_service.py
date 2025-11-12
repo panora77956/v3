@@ -5,12 +5,12 @@ Download and analyze videos from TikTok/YouTube URLs
 """
 
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
 from typing import Callable, Dict, Optional, Set
 from urllib.parse import urlparse
+from utils.safe_remove import safe_rmtree
 
 
 class VideoCloneService:
@@ -381,9 +381,12 @@ class VideoCloneService:
 
             if parent_dir in self._temp_dirs:
                 if os.path.exists(parent_dir):
-                    shutil.rmtree(parent_dir, ignore_errors=True)
-                    self._temp_dirs.discard(parent_dir)
-                    self.log(f"[VideoClone] Cleaned up temp directory: {parent_dir}")
+                    success = safe_rmtree(parent_dir, log_callback=self.log)
+                    if success:
+                        self._temp_dirs.discard(parent_dir)
+                        self.log(f"[VideoClone] Cleaned up temp directory: {parent_dir}")
+                    else:
+                        self.log(f"[VideoClone] Warning: Could not fully cleanup temp directory: {parent_dir}")
         except Exception as e:
             self.log(f"[VideoClone] Warning: Cleanup failed: {e}")
 
