@@ -212,16 +212,28 @@ class ImageGenerationWorker(QThread):
                         self.progress.emit(f"[WARNING] Failed to inject: {e}")
 
                 img_data = None
-                if self.use_whisk and self.model_paths and self.prod_paths:
+                if self.use_whisk:
                     try:
                         from services import whisk_service
-                        img_data = whisk_service.generate_image(
-                            prompt=prompt,
-                            model_image=self.model_paths[0] if self.model_paths else None,
-                            product_image=self.prod_paths[0] if self.prod_paths else None,
-                            aspect_ratio=whisk_aspect_ratio,
-                            debug_callback=self.progress.emit,
-                        )
+                        # Use reference images if available, otherwise use text-only generation
+                        if self.model_paths and self.prod_paths:
+                            # Method 1: Generate with reference images (existing method)
+                            self.progress.emit(f"Cảnh {scene.get('index')}: Whisk với reference images...")
+                            img_data = whisk_service.generate_image(
+                                prompt=prompt,
+                                model_image=self.model_paths[0] if self.model_paths else None,
+                                product_image=self.prod_paths[0] if self.prod_paths else None,
+                                aspect_ratio=whisk_aspect_ratio,
+                                debug_callback=self.progress.emit,
+                            )
+                        else:
+                            # Method 2: Text-only generation (new simplified method)
+                            self.progress.emit(f"Cảnh {scene.get('index')}: Whisk text-only...")
+                            img_data = whisk_service.generate_image_text_only(
+                                prompt=prompt,
+                                aspect_ratio=whisk_aspect_ratio,
+                                log_callback=self.progress.emit,
+                            )
                         if img_data:
                             self.progress.emit(f"Cảnh {scene.get('index')}: Whisk ✓")
                     except Exception as e:
@@ -438,16 +450,25 @@ class ImageGenerationWorker(QThread):
                 error = None
 
                 # Use Whisk if enabled
-                if self.use_whisk and self.model_paths and self.prod_paths:
+                if self.use_whisk:
                     try:
                         from services import whisk_service
-                        img_data = whisk_service.generate_image(
-                            prompt=prompt,
-                            model_image=self.model_paths[0] if self.model_paths else None,
-                            product_image=self.prod_paths[0] if self.prod_paths else None,
-                            aspect_ratio=whisk_aspect_ratio,
-                            debug_callback=None,
-                        )
+                        # Use reference images if available, otherwise use text-only generation
+                        if self.model_paths and self.prod_paths:
+                            img_data = whisk_service.generate_image(
+                                prompt=prompt,
+                                model_image=self.model_paths[0] if self.model_paths else None,
+                                product_image=self.prod_paths[0] if self.prod_paths else None,
+                                aspect_ratio=whisk_aspect_ratio,
+                                debug_callback=None,
+                            )
+                        else:
+                            # Text-only generation
+                            img_data = whisk_service.generate_image_text_only(
+                                prompt=prompt,
+                                aspect_ratio=whisk_aspect_ratio,
+                                log_callback=None,
+                            )
                     except Exception as e:
                         error = f"Whisk: {str(e)[:50]}"
 
