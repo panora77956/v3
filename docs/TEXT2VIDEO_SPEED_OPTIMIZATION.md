@@ -36,10 +36,11 @@ Implemented 5 key optimizations to reduce scenario generation time by 50-60% for
 **Change**: Modified `_call_gemini()` to calculate timeout dynamically
 
 ```python
-def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None):
+def _call_gemini(prompt, api_key, model="gemini-1.5-flash", timeout=None):
     """
     Auto-calculate timeout based on prompt length and complexity.
     For long scenarios (480s+), LLM needs more time.
+    Note: Using gemini-1.5-flash for stability (gemini-2.5-flash has 503 issues)
     """
     if timeout is None:
         base_timeout = 240  # 4 minutes
