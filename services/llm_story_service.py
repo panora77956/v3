@@ -585,6 +585,81 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
     if domain and topic:
         print(f"[INFO] Using domain='{domain}', topic='{topic}', no_characters={requires_no_characters}")
 
+    # ===== CHECK FOR CUSTOM SYSTEM PROMPT =====
+    # Check if custom system prompt exists for this domain+topic
+    custom_prompt = None
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            custom_prompt = get_custom_prompt(domain, topic)
+            if custom_prompt:
+                print(f"[INFO] Using CUSTOM system prompt for {domain}/{topic}")
+        except ImportError:
+            print(f"[WARN] Could not load custom prompts module")
+    
+    # If custom prompt exists, use simplified prompt structure
+    if custom_prompt:
+        # Build minimal prompt with ONLY custom prompt + language + schema
+        target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
+        
+        # Language instruction
+        language_instruction = f"""
+TARGET LANGUAGE: {target_language}
+ALL text_tgt, prompt_tgt, title_tgt, outline_tgt, screenplay_tgt, voiceover_tgt fields MUST be in {target_language}.
+"""
+        
+        # Schema for no-character domains (PANORA)
+        schema = f"""
+Return ONLY valid JSON (no extra text):
+
+{{
+  "title_vi": "Tiêu đề hấp dẫn",
+  "title_tgt": "Title in {target_language}",
+  "hook_summary": "Hook 3 giây đầu",
+  "outline_vi": "Dàn ý theo 5 giai đoạn",
+  "outline_tgt": "Outline in {target_language}",
+  "screenplay_vi": "Screenplay với VOICEOVER ngôi thứ hai và VISUAL DESCRIPTION",
+  "screenplay_tgt": "Screenplay in {target_language}",
+  "emotional_arc": "Cung cảm xúc",
+  "scenes": [
+    {{
+      "prompt_vi": "Mô tả hình ảnh y khoa/khoa học - KHÔNG có tên nhân vật",
+      "prompt_tgt": "Visual description in {target_language} - NO character names",
+      "duration": {per[0] if per else 8},
+      "voiceover_vi": "Lời thoại ngôi thứ hai (Bạn, Cơ thể của bạn)",
+      "voiceover_tgt": "Second-person narration in {target_language}",
+      "location": "Không gian y khoa cụ thể",
+      "time_of_day": "Day/Night",
+      "camera_shot": "Wide/Close-up/etc",
+      "lighting_mood": "Bright/Dark/etc",
+      "emotion": "Cảm xúc",
+      "story_beat": "Setup/Rising/Twist/Climax/Resolution",
+      "transition_from_previous": "Kết nối với cảnh trước",
+      "visual_elements": ["Hologram", "3D simulation", "Data overlay"],
+      "visual_notes": "Props, colors, medical accuracy"
+    }}
+  ]
+}}
+
+CRITICAL: NO character names, use second-person voiceover, {n} scenes total.
+"""
+        
+        # Return simplified prompt with custom system prompt
+        return f"""{custom_prompt}
+
+{language_instruction}
+
+INPUT:
+- Ý tưởng: "{idea}"
+- Phong cách: "{style_vi}"
+- Số cảnh: {n} (mỗi cảnh 8s; cảnh cuối {per[-1]}s)
+- Ngôn ngữ đích: {target_language}
+
+{schema}
+"""
+    
+    # ===== END CUSTOM PROMPT CHECK =====
+
     # Get style-specific guidance with animal detection
     style_guidance = _get_style_specific_guidance(style_vi, idea=idea, topic=topic)
 
