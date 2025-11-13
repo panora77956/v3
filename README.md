@@ -125,6 +125,32 @@ GOOGLE_API_KEY=your-gemini-key
 ELEVENLABS_API_KEY=your-elevenlabs-key
 ```
 
+### 🚀 **NEW: Vertex AI Support (Khắc phục lỗi 503)**
+
+Để tránh lỗi 503 "Service Unavailable" từ Google AI Studio API, bạn có thể sử dụng **Vertex AI** với rate limit cao hơn và ổn định hơn:
+
+**✨ Ưu điểm:**
+- ✅ Rate limit cao hơn nhiều (không bị giới hạn 60 req/min)
+- ✅ Ít bị lỗi 503 hơn (infrastructure cấp enterprise)
+- ✅ Fallback tự động về AI Studio nếu lỗi
+- ✅ Không cần thay đổi code, chỉ cập nhật config
+
+**📖 Setup Vertex AI:**
+1. Xem hướng dẫn chi tiết: **[Vertex AI Setup Guide](docs/VERTEX_AI_SETUP.md)**
+2. Cập nhật `config.json`:
+```json
+{
+  "vertex_ai": {
+    "enabled": true,
+    "project_id": "your-gcp-project-id",
+    "location": "us-central1",
+    "use_vertex_first": true
+  }
+}
+```
+
+**💡 Tip:** Giữ nguyên API keys cũ trong config. Hệ thống sẽ tự động fallback về AI Studio nếu Vertex AI không khả dụng.
+
 ---
 
 ## 🎮 Sử Dụng / Usage

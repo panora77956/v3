@@ -32,6 +32,19 @@ def check(kind: str, key: str) -> Tuple[bool, str]:
             if r.status_code==200: return True, f'OK @ {_ts()}'
             if r.status_code in (401,403): return False, _fmt_err('Unauthorized', r)
             return False, _fmt_err('HTTP', r)
+        if kind in ('vertex_ai', 'vertexai'):
+            # Vertex AI uses GCP project ID, not API key
+            # Check if it looks like a valid project ID
+            if k and len(k) > 5 and '-' not in k[:1]:  # Basic validation
+                # Try to validate by checking if google-genai is installed
+                try:
+                    from google import genai
+                    # If we can import, assume configuration is valid
+                    # Full validation requires actual API call which needs auth setup
+                    return True, f'Format OK (Vertex AI requires proper GCP auth) @ {_ts()}'
+                except ImportError:
+                    return False, f'google-genai library not installed @ {_ts()}'
+            return False, f'Invalid project ID format @ {_ts()}'
         if kind in ('eleven','elevenlabs'):
             r=requests.get('https://api.elevenlabs.io/v1/user', headers={'xi-api-key':k}, timeout=(10,20))
             if r.status_code==200: return True, f'OK @ {_ts()}'

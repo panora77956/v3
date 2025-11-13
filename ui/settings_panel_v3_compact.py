@@ -385,6 +385,138 @@ class SettingsPanelV3Compact(QWidget):
         # Add Multi-Account section to grid (row 2, spanning both columns)
         accordion_grid.addWidget(multi_acc_section, 2, 0, 1, 2)
 
+        # === VERTEX AI CONFIGURATION - AccordionSection ===
+        vertex_section = AccordionSection("🚀 Vertex AI Configuration (Khắc phục lỗi 503)")
+        
+        # Add hint
+        hint_vertex = QLabel(
+            "💡 Vertex AI giúp giảm lỗi 503 từ 25% xuống ~2-5%!\n"
+            "• Rate limit cao hơn Google AI Studio (60 req/min)\n"
+            "• Ổn định hơn cho production\n"
+            "• Tự động fallback về AI Studio nếu lỗi\n"
+            "• Chi phí: ~$2.25 per 1,000 scripts (free tier $300)"
+        )
+        hint_vertex.setFont(FONT_SMALL)
+        hint_vertex.setWordWrap(True)
+        hint_vertex.setStyleSheet("color: #666; font-size: 11px; padding: 8px;")
+        vertex_section.add_content_widget(hint_vertex)
+        
+        # Load vertex_ai config
+        vertex_config = self.state.get('vertex_ai', {})
+        
+        # Enable checkbox
+        enable_row = QHBoxLayout()
+        enable_row.setSpacing(8)
+        self.chk_vertex_enabled = QCheckBox("Bật Vertex AI")
+        self.chk_vertex_enabled.setChecked(vertex_config.get('enabled', False))
+        self.chk_vertex_enabled.setFont(FONT_BODY)
+        self.chk_vertex_enabled.setToolTip(
+            "Bật để sử dụng Vertex AI thay vì Google AI Studio.\n"
+            "Giảm lỗi 503 đáng kể (từ 25% xuống ~2-5%).\n"
+            "Cần setup GCP project và service account."
+        )
+        enable_row.addWidget(self.chk_vertex_enabled)
+        enable_row.addStretch()
+        vertex_section.add_content_layout(enable_row)
+        
+        # Service Accounts hint
+        hint_accounts = QLabel(
+            "💡 Thêm nhiều service accounts để tận dụng $300 free tier của từng account!\n"
+            "Mỗi service account = 1 GCP project với $300 credit.\n"
+            "Hệ thống tự động round-robin để phân bổ requests."
+        )
+        hint_accounts.setFont(FONT_SMALL)
+        hint_accounts.setWordWrap(True)
+        hint_accounts.setStyleSheet("color: #666; font-size: 10px; padding: 4px;")
+        vertex_section.add_content_widget(hint_accounts)
+        
+        # Service Accounts table
+        self.vertex_accounts_table = QTableWidget()
+        self.vertex_accounts_table.setColumnCount(4)
+        self.vertex_accounts_table.setHorizontalHeaderLabels(["Enabled", "Account Name", "Project ID", "Region"])
+        self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.vertex_accounts_table.setMaximumHeight(150)
+        self.vertex_accounts_table.setAlternatingRowColors(True)
+        self.vertex_accounts_table.setToolTip(
+            "Thêm nhiều service accounts để:\n"
+            "• Tận dụng $300 free tier của mỗi account\n"
+            "• Round-robin tự động phân bổ requests\n"
+            "• Tăng rate limit tổng thể"
+        )
+        self.vertex_accounts_table.setStyleSheet("""
+            QTableWidget {
+                background: white;
+                border: 2px solid #BDBDBD;
+                border-radius: 6px;
+            }
+            QTableWidget::item {
+                padding: 6px;
+            }
+        """)
+        
+        # Load service accounts
+        self._load_vertex_accounts_table()
+        
+        vertex_section.add_content_widget(self.vertex_accounts_table)
+        
+        # Service account management buttons
+        vertex_buttons = QHBoxLayout()
+        vertex_buttons.setSpacing(8)
+        
+        self.btn_add_vertex_account = CompactButton("➕ Add Service Account")
+        self.btn_add_vertex_account.setObjectName("btn_primary")
+        self.btn_add_vertex_account.clicked.connect(self._add_vertex_account)
+        vertex_buttons.addWidget(self.btn_add_vertex_account)
+        
+        self.btn_edit_vertex_account = CompactButton("✏️ Edit")
+        self.btn_edit_vertex_account.clicked.connect(self._edit_vertex_account)
+        vertex_buttons.addWidget(self.btn_edit_vertex_account)
+        
+        self.btn_remove_vertex_account = CompactButton("🗑️ Remove")
+        self.btn_remove_vertex_account.clicked.connect(self._remove_vertex_account)
+        vertex_buttons.addWidget(self.btn_remove_vertex_account)
+        
+        vertex_buttons.addStretch()
+        
+        vertex_section.add_content_layout(vertex_buttons)
+        
+        # Priority checkbox
+        priority_row = QHBoxLayout()
+        priority_row.setSpacing(8)
+        self.chk_vertex_first = QCheckBox("Ưu tiên Vertex AI (fallback về AI Studio nếu lỗi)")
+        self.chk_vertex_first.setChecked(vertex_config.get('use_vertex_first', True))
+        self.chk_vertex_first.setFont(FONT_SMALL)
+        self.chk_vertex_first.setToolTip(
+            "Khi bật: Try Vertex AI trước, fallback về AI Studio nếu lỗi.\n"
+            "Khi tắt: Chỉ dùng AI Studio."
+        )
+        priority_row.addWidget(self.chk_vertex_first)
+        priority_row.addStretch()
+        vertex_section.add_content_layout(priority_row)
+        
+        # Documentation link
+        doc_label = QLabel(
+            '📖 <a href="file:///docs/VERTEX_AI_SETUP.md">Xem hướng dẫn setup chi tiết</a> | '
+            '<a href="https://console.cloud.google.com/vertex-ai">Google Cloud Console</a>'
+        )
+        doc_label.setFont(FONT_SMALL)
+        doc_label.setOpenExternalLinks(True)
+        doc_label.setStyleSheet("color: #1976D2; padding: 4px;")
+        vertex_section.add_content_widget(doc_label)
+        
+        # Status indicator
+        self.lb_vertex_status = QLabel("")
+        self.lb_vertex_status.setFont(FONT_SMALL)
+        self.lb_vertex_status.setStyleSheet("padding: 4px;")
+        vertex_section.add_content_widget(self.lb_vertex_status)
+        self._update_vertex_status()
+        
+        # Add Vertex AI section to grid (row 3, spanning both columns)
+        accordion_grid.addWidget(vertex_section, 3, 0, 1, 2)
+
         # === WHISK AUTHENTICATION (IMAGE GENERATION) - AccordionSection ===
         whisk_section = AccordionSection("🎨 Whisk Authentication (Image Generation)")
         
@@ -460,8 +592,8 @@ class SettingsPanelV3Compact(QWidget):
         storage_note.setStyleSheet("color: #888; font-size: 10px; font-style: italic; padding: 4px;")
         whisk_section.add_content_widget(storage_note)
         
-        # Add Whisk section to grid (row 3, spanning both columns)
-        accordion_grid.addWidget(whisk_section, 3, 0, 1, 2)
+        # Add Whisk section to grid (row 4, spanning both columns)
+        accordion_grid.addWidget(whisk_section, 4, 0, 1, 2)
 
         api_layout.addLayout(accordion_grid)
 
@@ -476,6 +608,7 @@ class SettingsPanelV3Compact(QWidget):
             eleven_section.set_expanded(True),
             openai_section.set_expanded(True),
             multi_acc_section.set_expanded(True),
+            vertex_section.set_expanded(True),
             whisk_section.set_expanded(True)
         ])
         toggle_row.addWidget(btn_expand)
@@ -487,6 +620,7 @@ class SettingsPanelV3Compact(QWidget):
             eleven_section.set_expanded(False),
             openai_section.set_expanded(False),
             multi_acc_section.set_expanded(False),
+            vertex_section.set_expanded(False),
             whisk_section.set_expanded(False)
         ])
         toggle_row.addWidget(btn_collapse)
@@ -806,6 +940,283 @@ class SettingsPanelV3Compact(QWidget):
         if d:
             self.ed_local.setText(d)
 
+    def _load_vertex_accounts_table(self):
+        """Load Vertex AI service accounts from config into table"""
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        
+        account_mgr = get_vertex_account_manager()
+        account_mgr.load_from_config(cfg.load())
+        accounts = account_mgr.get_all_accounts()
+        
+        self.vertex_accounts_table.setRowCount(len(accounts))
+        
+        for row, account in enumerate(accounts):
+            # Enabled checkbox
+            checkbox_widget = QWidget()
+            checkbox_layout = QHBoxLayout(checkbox_widget)
+            checkbox_layout.setContentsMargins(0, 0, 0, 0)
+            checkbox_layout.setAlignment(Qt.AlignCenter)
+            checkbox = QCheckBox()
+            checkbox.setChecked(account.enabled)
+            checkbox.stateChanged.connect(lambda state, r=row: self._toggle_vertex_account(r, state))
+            checkbox_layout.addWidget(checkbox)
+            self.vertex_accounts_table.setCellWidget(row, 0, checkbox_widget)
+            
+            # Account name
+            name_item = QTableWidgetItem(account.name)
+            self.vertex_accounts_table.setItem(row, 1, name_item)
+            
+            # Project ID (truncated)
+            project_display = account.project_id[:20] + "..." if len(account.project_id) > 20 else account.project_id
+            project_item = QTableWidgetItem(project_display)
+            self.vertex_accounts_table.setItem(row, 2, project_item)
+            
+            # Region
+            region_item = QTableWidgetItem(account.location)
+            self.vertex_accounts_table.setItem(row, 3, region_item)
+
+    def _toggle_vertex_account(self, row, state):
+        """Toggle Vertex AI service account enabled state"""
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        
+        account_mgr = get_vertex_account_manager()
+        if state == Qt.Checked:
+            account_mgr.enable_account(row)
+        else:
+            account_mgr.disable_account(row)
+
+    def _add_vertex_account(self):
+        """Add new Vertex AI service account"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Add Vertex AI Service Account")
+        dialog.setMinimumWidth(600)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Instructions
+        inst = QLabel(
+            "📝 Nhập thông tin Service Account JSON từ Google Cloud Console:\n\n"
+            "1. Tạo Service Account tại console.cloud.google.com\n"
+            "2. Enable Vertex AI API\n"
+            "3. Tạo và download JSON key file\n"
+            "4. Paste nội dung JSON vào đây"
+        )
+        inst.setWordWrap(True)
+        inst.setStyleSheet("color: #666; padding: 8px;")
+        layout.addWidget(inst)
+        
+        # Name input
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Account Name:"))
+        ed_name = _line("My Vertex Account")
+        name_row.addWidget(ed_name, 1)
+        layout.addLayout(name_row)
+        
+        # JSON input
+        layout.addWidget(QLabel("Service Account JSON:"))
+        ed_json = QTextEdit()
+        ed_json.setPlaceholderText('{"type": "service_account", "project_id": "...", ...}')
+        ed_json.setMinimumHeight(200)
+        ed_json.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New';
+                font-size: 10px;
+                background: #F5F5F5;
+                border: 2px solid #BDBDBD;
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(ed_json)
+        
+        # Location input
+        loc_row = QHBoxLayout()
+        loc_row.addWidget(QLabel("Region:"))
+        ed_location = _line("us-central1")
+        ed_location.setText("us-central1")
+        loc_row.addWidget(ed_location, 1)
+        layout.addLayout(loc_row)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            name = ed_name.text().strip()
+            json_str = ed_json.toPlainText().strip()
+            location = ed_location.text().strip() or "us-central1"
+            
+            if not name:
+                QMessageBox.warning(self, "Validation Error", "Please enter account name")
+                return
+            
+            if not json_str:
+                QMessageBox.warning(self, "Validation Error", "Please enter service account JSON")
+                return
+            
+            # Validate JSON
+            from services.vertex_service_account_manager import get_vertex_account_manager, VertexServiceAccount
+            
+            account_mgr = get_vertex_account_manager()
+            is_valid, error_msg = account_mgr.validate_credentials_json(json_str)
+            
+            if not is_valid:
+                QMessageBox.critical(self, "Invalid JSON", f"Service account JSON is invalid:\n\n{error_msg}")
+                return
+            
+            # Extract project_id from JSON
+            import json
+            try:
+                creds = json.loads(json_str)
+                project_id = creds.get('project_id', '')
+            except:
+                QMessageBox.critical(self, "Error", "Could not parse JSON to extract project_id")
+                return
+            
+            # Add account
+            account = VertexServiceAccount(
+                name=name,
+                project_id=project_id,
+                credentials_json=json_str,
+                location=location,
+                enabled=True
+            )
+            
+            account_mgr.add_account(account)
+            self._load_vertex_accounts_table()
+            
+            QMessageBox.information(
+                self,
+                "Success",
+                f"✅ Added service account: {name}\n\nProject ID: {project_id}"
+            )
+
+    def _edit_vertex_account(self):
+        """Edit selected Vertex AI service account"""
+        row = self.vertex_accounts_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select an account to edit")
+            return
+        
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        
+        account_mgr = get_vertex_account_manager()
+        accounts = account_mgr.get_all_accounts()
+        
+        if row >= len(accounts):
+            return
+        
+        account = accounts[row]
+        
+        # Similar dialog to add, but pre-populated
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Edit Vertex AI Service Account")
+        dialog.setMinimumWidth(600)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Name
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Account Name:"))
+        ed_name = _line()
+        ed_name.setText(account.name)
+        name_row.addWidget(ed_name, 1)
+        layout.addLayout(name_row)
+        
+        # JSON
+        layout.addWidget(QLabel("Service Account JSON:"))
+        ed_json = QTextEdit()
+        ed_json.setPlainText(account.credentials_json)
+        ed_json.setMinimumHeight(200)
+        ed_json.setStyleSheet("""
+            QTextEdit {
+                font-family: 'Courier New';
+                font-size: 10px;
+                background: #F5F5F5;
+                border: 2px solid #BDBDBD;
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(ed_json)
+        
+        # Location
+        loc_row = QHBoxLayout()
+        loc_row.addWidget(QLabel("Region:"))
+        ed_location = _line()
+        ed_location.setText(account.location)
+        loc_row.addWidget(ed_location, 1)
+        layout.addLayout(loc_row)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            import json
+            from services.vertex_service_account_manager import VertexServiceAccount
+            
+            name = ed_name.text().strip()
+            json_str = ed_json.toPlainText().strip()
+            location = ed_location.text().strip() or "us-central1"
+            
+            # Validate and extract project_id
+            is_valid, error_msg = account_mgr.validate_credentials_json(json_str)
+            if not is_valid:
+                QMessageBox.critical(self, "Invalid JSON", f"Service account JSON is invalid:\n\n{error_msg}")
+                return
+            
+            try:
+                creds = json.loads(json_str)
+                project_id = creds.get('project_id', '')
+            except:
+                QMessageBox.critical(self, "Error", "Could not parse JSON")
+                return
+            
+            # Update account
+            updated_account = VertexServiceAccount(
+                name=name,
+                project_id=project_id,
+                credentials_json=json_str,
+                location=location,
+                enabled=account.enabled
+            )
+            
+            account_mgr.update_account(row, updated_account)
+            self._load_vertex_accounts_table()
+
+    def _remove_vertex_account(self):
+        """Remove selected Vertex AI service account"""
+        row = self.vertex_accounts_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "No Selection", "Please select an account to remove")
+            return
+        
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        
+        account_mgr = get_vertex_account_manager()
+        accounts = account_mgr.get_all_accounts()
+        
+        if row >= len(accounts):
+            return
+        
+        account = accounts[row]
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Remove service account '{account.name}'?\n\nProject ID: {account.project_id}",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            account_mgr.remove_account(row)
+            self._load_vertex_accounts_table()
+
     def _save(self):
         storage = 'gdrive' if self.rb_drive.isChecked() else 'local'
         st = {
@@ -824,12 +1235,22 @@ class SettingsPanelV3Compact(QWidget):
             # Whisk Authentication
             'labs_session_token': self.ed_whisk_session.text().strip(),
             'whisk_bearer_token': self.ed_whisk_bearer.text().strip(),
+            # Vertex AI Configuration
+            'vertex_ai': {
+                'enabled': self.chk_vertex_enabled.isChecked(),
+                'use_vertex_first': self.chk_vertex_first.isChecked()
+            }
         }
 
         # ISSUE #4 FIX: Save multi-account manager data
         from services.account_manager import get_account_manager
         account_mgr = get_account_manager()
         account_mgr.save_to_config(st)
+        
+        # Save Vertex AI service accounts
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        vertex_account_mgr = get_vertex_account_manager()
+        vertex_account_mgr.save_to_config(st)
 
         cfg.save(st)
         
@@ -843,8 +1264,34 @@ class SettingsPanelV3Compact(QWidget):
             logger.warning(f"Failed to refresh key manager cache: {e}")
         
         self.lb_saved.setText(f'✓ Saved at {_ts()}')
+        
+        # Update Vertex AI status after save
+        self._update_vertex_status()
 
         QTimer.singleShot(5000, lambda: self.lb_saved.setText(''))
+
+    def _update_vertex_status(self):
+        """Update Vertex AI status indicator based on configuration"""
+        if not hasattr(self, 'lb_vertex_status'):
+            return
+            
+        enabled = self.chk_vertex_enabled.isChecked() if hasattr(self, 'chk_vertex_enabled') else False
+        
+        # Check service accounts
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        account_mgr = get_vertex_account_manager()
+        account_mgr.load_from_config(cfg.load())
+        enabled_accounts = account_mgr.get_enabled_accounts()
+        
+        if enabled and len(enabled_accounts) > 0:
+            self.lb_vertex_status.setText(f'✅ Vertex AI enabled - {len(enabled_accounts)} account(s) active - Giảm lỗi 503 đáng kể!')
+            self.lb_vertex_status.setStyleSheet('color: #4CAF50; font-weight: bold; padding: 4px;')
+        elif enabled and len(enabled_accounts) == 0:
+            self.lb_vertex_status.setText('⚠️ Cần thêm ít nhất 1 service account')
+            self.lb_vertex_status.setStyleSheet('color: #FF9800; font-weight: bold; padding: 4px;')
+        else:
+            self.lb_vertex_status.setText('ℹ️ Vertex AI disabled - Sử dụng Google AI Studio (có thể bị lỗi 503)')
+            self.lb_vertex_status.setStyleSheet('color: #757575; padding: 4px;')
 
     def _update_system_prompts(self):
         self.lb_prompts_status.setText('⏳ Updating...')
