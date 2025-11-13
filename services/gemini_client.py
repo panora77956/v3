@@ -58,9 +58,9 @@ class GeminiClient:
             VertexAIClient instance or None
         """
         try:
-            # Load config
-            with open('config.json', 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            # Load config from user config file (not project config.json)
+            from utils import config as cfg
+            config = cfg.load()
             
             vertex_config = config.get('vertex_ai', {})
             
