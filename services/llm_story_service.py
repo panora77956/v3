@@ -573,6 +573,18 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
     # Long prompts take longer for LLM to process, especially for 480s+ scenarios
     is_long_scenario = sum(per) > 300  # True for 5+ minute videos
 
+    # Check if domain requires no-character narration (like PANORA Science Narrator)
+    # These domains use voiceover narration addressing audience directly ("You", "Your body")
+    # instead of creating fictional characters
+    no_character_domains = [
+        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
+    ]
+    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
+    
+    # Log the domain/topic selection for debugging
+    if domain and topic:
+        print(f"[INFO] Using domain='{domain}', topic='{topic}', no_characters={requires_no_characters}")
+
     # Get style-specific guidance with animal detection
     style_guidance = _get_style_specific_guidance(style_vi, idea=idea, topic=topic)
 
@@ -647,7 +659,25 @@ Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của ng
         # Ultra-condensed version for 5+ minute videos - essential rules only
         if domain and topic:
             # Domain-specific: Only include technical requirements
-            base_rules = f"""
+            if requires_no_characters:
+                # No-character domains (like PANORA): Remove all character-related instructions
+                base_rules = f"""
+{base_role}
+
+{input_type_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
+
+{style_guidance}
+
+**TECHNICAL REQUIREMENTS**:
+1. Use voiceover (VO) narration addressing the audience directly
+2. Scene prompts: Visual descriptions only (no character names or personas)
+3. Scene continuity: Logical connection between scenes
+"""
+            else:
+                # Standard character-based storytelling
+                base_rules = f"""
 {base_role}
 
 {input_type_instruction}
@@ -683,7 +713,28 @@ Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của ng
         # Optimized version for shorter videos - reduced verbosity for faster generation
         if domain and topic:
             # Domain-specific: Only include technical requirements
-            base_rules = f"""
+            if requires_no_characters:
+                # No-character domains (like PANORA): Remove all character-related instructions
+                base_rules = f"""
+{base_role}
+
+{input_type_instruction}
+
+**TARGET LANGUAGE**: {target_language} - ALL text_tgt, prompt_tgt, title_tgt, outline_tgt fields MUST be in this language.
+
+{style_guidance}
+
+**VOICEOVER NARRATION**: Use second-person narration addressing the audience ("You", "Your body", "Your brain")
+- NO character names or fictional personas
+- NO dialogue between characters
+- Scene descriptions focus on visual elements only
+
+**SCENE CONTINUITY**: Scenes connect logically (location, time, lighting consistent)
+**STYLE CONSISTENCY**: All scenes use "{style_vi}" style consistently
+""".strip()
+            else:
+                # Standard character-based storytelling
+                base_rules = f"""
 {base_role}
 
 {input_type_instruction}
@@ -740,7 +791,47 @@ Mục tiêu: TẠO NỘI DUNG VIRAL dựa CHÍNH XÁC trên ý tưởng của ng
 **SCENE QUALITY**: Visual & specific descriptions, natural dialogue, varied shots, setup/payoff
 """.strip()
 
-    schema = f"""
+    # Build schema conditionally based on whether characters are allowed
+    if requires_no_characters:
+        # No-character schema (PANORA and similar domains)
+        schema = f"""
+Trả về **JSON hợp lệ** theo schema EXACT (không thêm ký tự ngoài JSON):
+
+{{
+  "title_vi": "Tiêu đề HẤP DẪN, gây tò mò (VI)",
+  "title_tgt": "Compelling title in {target_language}",
+  "hook_summary": "Mô tả hook 3s đầu - điều gì khiến người xem PHẢI xem tiếp?",
+  "outline_vi": "Dàn ý theo {mode}: Cấu trúc theo giai đoạn + key emotional beats + major plot points",
+  "outline_tgt": "Outline in {target_language}",
+  "screenplay_vi": "Screenplay chi tiết: VOICEOVER narration addressing audience in second person (Bạn, Cơ thể của bạn, Não của bạn)\\nVISUAL DESCRIPTION (3D/2D medical simulations, holograms, data overlays)\\n- Bao gồm camera angles, lighting, mood, transitions\\n- KHÔNG có nhân vật hư cấu, KHÔNG có tên riêng",
+  "screenplay_tgt": "Full screenplay in {target_language} with second-person voiceover",
+  "emotional_arc": "Cung cảm xúc của story: [Start emotion] → [Peaks & Valleys] → [End emotion]",
+  "scenes": [
+    {{
+      "prompt_vi":"Visual prompt CỤ THỂ (visual elements, lighting, camera, mood) - 2-3 câu mô tả hình ảnh y khoa/khoa học - KHÔNG có tên nhân vật",
+      "prompt_tgt":"Detailed visual prompt in {target_language} - NO character names, focus on scientific/medical visuals",
+      "duration": 8,
+      "voiceover_vi": "Lời thoại bằng ngôi thứ hai, nói chuyện trực tiếp với khán giả",
+      "voiceover_tgt": "Second-person narration in {target_language}",
+      "location": "Location cụ thể (phòng thí nghiệm, không gian y khoa, v.v.)",
+      "time_of_day": "Day/Night/etc",
+      "camera_shot": "Wide/Close-up/POV/Tracking/etc + movement",
+      "lighting_mood": "Bright/Dark/Warm/Cold/High-contrast/etc",
+      "emotion": "Cảm xúc chủ đạo của scene",
+      "story_beat": "Plot point: Setup/Rising action/Twist/Climax/Resolution",
+      "transition_from_previous": "How this scene connects to previous scene",
+      "style_notes": "Specific {style_vi} style elements in this scene",
+      "visual_elements": ["Mô tả các yếu tố hình ảnh: hologram, data overlay, 3D simulation, etc."],
+      "visual_notes": "Props, colors, symbolism, transitions, scientific accuracy"
+    }}
+  ]
+}}
+
+**NOTE**: Scene 1=strong hook, NO character names or fictional personas, use second-person voiceover addressing audience
+""".strip()
+    else:
+        # Standard character-based schema
+        schema = f"""
 Trả về **JSON hợp lệ** theo schema EXACT (không thêm ký tự ngoài JSON):
 
 {{
