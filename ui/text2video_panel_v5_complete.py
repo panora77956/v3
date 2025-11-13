@@ -1511,11 +1511,10 @@ class Text2VideoPanelV5(QWidget):
                 "Bạn có thể tiếp tục sử dụng kịch bản này hoặc tạo lại."
             )
 
-        # Display Bible + Outline + Screenplay
+        # Display Bible + Outline + Screenplay without framework headers
         parts = []
         cb = data.get("character_bible") or []
         if cb:
-            parts.append("=== HỒ SƠ NHÂN VẬT ===")
             for c in cb:
                 parts.append(
                     f"- {c.get('name','?')} [{c.get('role','?')}]: "
@@ -1526,15 +1525,21 @@ class Text2VideoPanelV5(QWidget):
 
         ol_vi = data.get("outline_vi", "").strip()
         if ol_vi:
-            parts.append("\n=== DÀN Ý ===\n" + ol_vi)
+            if parts:
+                parts.append("")  # Add blank line separator
+            parts.append(ol_vi)
 
         sp_vi = data.get("screenplay_vi", "").strip()
         sp_tgt = data.get("screenplay_tgt", "").strip()
         if sp_vi or sp_tgt:
-            parts.append(
-                f"\n=== KỊCH BẢN (VI) ===\n{sp_vi}\n\n"
-                f"=== SCREENPLAY ===\n{sp_tgt}"
-            )
+            if parts:
+                parts.append("")  # Add blank line separator
+            if sp_vi:
+                parts.append(sp_vi)
+            if sp_tgt:
+                if sp_vi:
+                    parts.append("")  # Add blank line separator between VI and target
+                parts.append(sp_tgt)
 
         self.view_story.setPlainText(
             "\n\n".join(parts) if parts else "(Không có dữ liệu)"
