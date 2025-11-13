@@ -337,6 +337,122 @@ class SettingsPanelV3Compact(QWidget):
         # Add Multi-Account section to grid (row 2, spanning both columns)
         accordion_grid.addWidget(multi_acc_section, 2, 0, 1, 2)
 
+        # === VERTEX AI CONFIGURATION - AccordionSection ===
+        vertex_section = AccordionSection("🚀 Vertex AI Configuration (Khắc phục lỗi 503)")
+        
+        # Add hint
+        hint_vertex = QLabel(
+            "💡 Vertex AI giúp giảm lỗi 503 từ 25% xuống ~2-5%!\n"
+            "• Rate limit cao hơn Google AI Studio (60 req/min)\n"
+            "• Ổn định hơn cho production\n"
+            "• Tự động fallback về AI Studio nếu lỗi\n"
+            "• Chi phí: ~$2.25 per 1,000 scripts (free tier $300)"
+        )
+        hint_vertex.setFont(FONT_SMALL)
+        hint_vertex.setWordWrap(True)
+        hint_vertex.setStyleSheet("color: #666; font-size: 11px; padding: 8px;")
+        vertex_section.add_content_widget(hint_vertex)
+        
+        # Load vertex_ai config
+        vertex_config = self.state.get('vertex_ai', {})
+        
+        # Enable checkbox
+        enable_row = QHBoxLayout()
+        enable_row.setSpacing(8)
+        self.chk_vertex_enabled = QCheckBox("Bật Vertex AI")
+        self.chk_vertex_enabled.setChecked(vertex_config.get('enabled', False))
+        self.chk_vertex_enabled.setFont(FONT_BODY)
+        self.chk_vertex_enabled.setToolTip(
+            "Bật để sử dụng Vertex AI thay vì Google AI Studio.\n"
+            "Giảm lỗi 503 đáng kể (từ 25% xuống ~2-5%).\n"
+            "Cần setup GCP project và authentication."
+        )
+        enable_row.addWidget(self.chk_vertex_enabled)
+        enable_row.addStretch()
+        vertex_section.add_content_layout(enable_row)
+        
+        # Project ID input
+        project_row = QHBoxLayout()
+        project_row.setSpacing(8)
+        project_label = QLabel("GCP Project ID:")
+        project_label.setFont(FONT_SMALL)
+        project_label.setToolTip(
+            "Google Cloud Platform Project ID.\n"
+            "Tạo tại: https://console.cloud.google.com/"
+        )
+        project_row.addWidget(project_label)
+        
+        self.ed_vertex_project = _line('your-gcp-project-id')
+        self.ed_vertex_project.setText(vertex_config.get('project_id', ''))
+        self.ed_vertex_project.setToolTip(
+            "GCP Project ID (ví dụ: my-video-project-123)\n"
+            "1. Tạo project tại console.cloud.google.com\n"
+            "2. Enable Vertex AI API\n"
+            "3. Setup authentication (gcloud auth hoặc service account)\n"
+            "4. Nhập Project ID vào đây"
+        )
+        project_row.addWidget(self.ed_vertex_project, 1)
+        vertex_section.add_content_layout(project_row)
+        
+        # Location input
+        location_row = QHBoxLayout()
+        location_row.setSpacing(8)
+        location_label = QLabel("Region:")
+        location_label.setFont(FONT_SMALL)
+        location_label.setToolTip("GCP region (mặc định: us-central1)")
+        location_row.addWidget(location_label)
+        
+        self.ed_vertex_location = _line('us-central1')
+        self.ed_vertex_location.setText(vertex_config.get('location', 'us-central1'))
+        self.ed_vertex_location.setToolTip(
+            "GCP region cho Vertex AI\n"
+            "Các lựa chọn phổ biến:\n"
+            "• us-central1 (mặc định, nhanh nhất)\n"
+            "• us-west1\n"
+            "• europe-west1\n"
+            "• asia-southeast1"
+        )
+        location_row.addWidget(self.ed_vertex_location, 1)
+        
+        location_info = QLabel("ℹ️ us-central1 (khuyến nghị)")
+        location_info.setStyleSheet("color: #666; font-size: 10px;")
+        location_row.addWidget(location_info)
+        vertex_section.add_content_layout(location_row)
+        
+        # Priority checkbox
+        priority_row = QHBoxLayout()
+        priority_row.setSpacing(8)
+        self.chk_vertex_first = QCheckBox("Ưu tiên Vertex AI (fallback về AI Studio nếu lỗi)")
+        self.chk_vertex_first.setChecked(vertex_config.get('use_vertex_first', True))
+        self.chk_vertex_first.setFont(FONT_SMALL)
+        self.chk_vertex_first.setToolTip(
+            "Khi bật: Try Vertex AI trước, fallback về AI Studio nếu lỗi.\n"
+            "Khi tắt: Chỉ dùng AI Studio."
+        )
+        priority_row.addWidget(self.chk_vertex_first)
+        priority_row.addStretch()
+        vertex_section.add_content_layout(priority_row)
+        
+        # Documentation link
+        doc_label = QLabel(
+            '📖 <a href="file:///docs/VERTEX_AI_SETUP.md">Xem hướng dẫn setup chi tiết</a> | '
+            '<a href="https://console.cloud.google.com/vertex-ai">Google Cloud Console</a>'
+        )
+        doc_label.setFont(FONT_SMALL)
+        doc_label.setOpenExternalLinks(True)
+        doc_label.setStyleSheet("color: #1976D2; padding: 4px;")
+        vertex_section.add_content_widget(doc_label)
+        
+        # Status indicator
+        self.lb_vertex_status = QLabel("")
+        self.lb_vertex_status.setFont(FONT_SMALL)
+        self.lb_vertex_status.setStyleSheet("padding: 4px;")
+        vertex_section.add_content_widget(self.lb_vertex_status)
+        self._update_vertex_status()
+        
+        # Add Vertex AI section to grid (row 3, spanning both columns)
+        accordion_grid.addWidget(vertex_section, 3, 0, 1, 2)
+
         # === WHISK AUTHENTICATION (IMAGE GENERATION) - AccordionSection ===
         whisk_section = AccordionSection("🎨 Whisk Authentication (Image Generation)")
         
@@ -412,8 +528,8 @@ class SettingsPanelV3Compact(QWidget):
         storage_note.setStyleSheet("color: #888; font-size: 10px; font-style: italic; padding: 4px;")
         whisk_section.add_content_widget(storage_note)
         
-        # Add Whisk section to grid (row 3, spanning both columns)
-        accordion_grid.addWidget(whisk_section, 3, 0, 1, 2)
+        # Add Whisk section to grid (row 4, spanning both columns)
+        accordion_grid.addWidget(whisk_section, 4, 0, 1, 2)
 
         api_layout.addLayout(accordion_grid)
 
@@ -428,6 +544,7 @@ class SettingsPanelV3Compact(QWidget):
             eleven_section.set_expanded(True),
             openai_section.set_expanded(True),
             multi_acc_section.set_expanded(True),
+            vertex_section.set_expanded(True),
             whisk_section.set_expanded(True)
         ])
         toggle_row.addWidget(btn_expand)
@@ -439,6 +556,7 @@ class SettingsPanelV3Compact(QWidget):
             eleven_section.set_expanded(False),
             openai_section.set_expanded(False),
             multi_acc_section.set_expanded(False),
+            vertex_section.set_expanded(False),
             whisk_section.set_expanded(False)
         ])
         toggle_row.addWidget(btn_collapse)
@@ -776,6 +894,13 @@ class SettingsPanelV3Compact(QWidget):
             # Whisk Authentication
             'labs_session_token': self.ed_whisk_session.text().strip(),
             'whisk_bearer_token': self.ed_whisk_bearer.text().strip(),
+            # Vertex AI Configuration
+            'vertex_ai': {
+                'enabled': self.chk_vertex_enabled.isChecked(),
+                'project_id': self.ed_vertex_project.text().strip(),
+                'location': self.ed_vertex_location.text().strip() or 'us-central1',
+                'use_vertex_first': self.chk_vertex_first.isChecked()
+            }
         }
 
         # ISSUE #4 FIX: Save multi-account manager data
@@ -785,8 +910,29 @@ class SettingsPanelV3Compact(QWidget):
 
         cfg.save(st)
         self.lb_saved.setText(f'✓ Saved at {_ts()}')
+        
+        # Update Vertex AI status after save
+        self._update_vertex_status()
 
         QTimer.singleShot(5000, lambda: self.lb_saved.setText(''))
+
+    def _update_vertex_status(self):
+        """Update Vertex AI status indicator based on configuration"""
+        if not hasattr(self, 'lb_vertex_status'):
+            return
+            
+        enabled = self.chk_vertex_enabled.isChecked() if hasattr(self, 'chk_vertex_enabled') else False
+        project_id = self.ed_vertex_project.text().strip() if hasattr(self, 'ed_vertex_project') else ''
+        
+        if enabled and project_id:
+            self.lb_vertex_status.setText('✅ Vertex AI enabled - Giảm lỗi 503 đáng kể!')
+            self.lb_vertex_status.setStyleSheet('color: #4CAF50; font-weight: bold; padding: 4px;')
+        elif enabled and not project_id:
+            self.lb_vertex_status.setText('⚠️ Cần nhập GCP Project ID')
+            self.lb_vertex_status.setStyleSheet('color: #FF9800; font-weight: bold; padding: 4px;')
+        else:
+            self.lb_vertex_status.setText('ℹ️ Vertex AI disabled - Sử dụng Google AI Studio (có thể bị lỗi 503)')
+            self.lb_vertex_status.setStyleSheet('color: #757575; padding: 4px;')
 
     def _update_system_prompts(self):
         self.lb_prompts_status.setText('⏳ Updating...')

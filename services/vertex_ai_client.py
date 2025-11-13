@@ -31,7 +31,7 @@ class VertexAIClient:
     
     def __init__(
         self, 
-        model: str = "gemini-2.0-flash-exp",
+        model: str = "gemini-2.5-flash",
         project_id: Optional[str] = None,
         location: str = "us-central1",
         api_key: Optional[str] = None,
@@ -41,7 +41,7 @@ class VertexAIClient:
         Initialize Vertex AI client
         
         Args:
-            model: Model name (e.g., "gemini-2.0-flash-exp", "gemini-1.5-pro")
+            model: Model name (e.g., "gemini-2.5-flash", "gemini-1.5-pro")
             project_id: GCP project ID (required for Vertex AI)
             location: GCP region (default: us-central1)
             api_key: Google API key (for AI Studio fallback)
@@ -282,7 +282,7 @@ class VertexAIClient:
 
 
 def create_vertex_ai_client(
-    model: str = "gemini-2.0-flash-exp",
+    model: str = "gemini-2.5-flash",
     project_id: Optional[str] = None,
     location: str = "us-central1",
     api_key: Optional[str] = None,
