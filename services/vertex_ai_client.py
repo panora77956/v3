@@ -6,6 +6,8 @@ This module provides a unified interface for using Vertex AI's Gemini models
 
 import os
 import time
+import json
+import tempfile
 from typing import Optional, List, Dict, Any
 
 try:
@@ -24,6 +26,7 @@ class VertexAIClient:
     
     Features:
     - Supports both Vertex AI (with GCP project) and AI Studio (with API key)
+    - Supports service account JSON credentials
     - Automatic retry with exponential backoff
     - Rate limiting protection
     - Better error handling for 503 errors
@@ -35,7 +38,8 @@ class VertexAIClient:
         project_id: Optional[str] = None,
         location: str = "us-central1",
         api_key: Optional[str] = None,
-        use_vertex: bool = True
+        use_vertex: bool = True,
+        credentials_json: Optional[str] = None
     ):
         """
         Initialize Vertex AI client
@@ -46,6 +50,7 @@ class VertexAIClient:
             location: GCP region (default: us-central1)
             api_key: Google API key (for AI Studio fallback)
             use_vertex: Try to use Vertex AI first (default: True)
+            credentials_json: Service account JSON string (optional, for Vertex AI)
         """
         if not GENAI_AVAILABLE:
             raise ImportError(
@@ -58,7 +63,9 @@ class VertexAIClient:
         self.location = location or os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1')
         self.api_key = api_key
         self.use_vertex = use_vertex
+        self.credentials_json = credentials_json
         self.client = None
+        self._temp_creds_file = None  # Track temporary credentials file
         
         # Initialize client
         self._init_client()
@@ -74,6 +81,21 @@ class VertexAIClient:
                 os.environ['GOOGLE_CLOUD_PROJECT'] = self.project_id
                 os.environ['GOOGLE_CLOUD_LOCATION'] = self.location
                 
+                # Handle service account credentials if provided
+                if self.credentials_json:
+                    # Create temporary file for credentials
+                    self._temp_creds_file = tempfile.NamedTemporaryFile(
+                        mode='w',
+                        suffix='.json',
+                        delete=False
+                    )
+                    self._temp_creds_file.write(self.credentials_json)
+                    self._temp_creds_file.close()
+                    
+                    # Set environment variable to use this credentials file
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self._temp_creds_file.name
+                    print(f"[VertexAI] Using service account credentials")
+                
                 # Initialize Vertex AI client
                 self.client = genai.Client(
                     vertexai=True,
@@ -86,6 +108,8 @@ class VertexAIClient:
             except Exception as e:
                 print(f"[VertexAI] Could not initialize Vertex AI client: {e}")
                 print(f"[VertexAI] Falling back to AI Studio API")
+                # Clean up temp file if created
+                self._cleanup_temp_file()
         
         # Fallback to AI Studio
         if self.api_key:
@@ -101,6 +125,19 @@ class VertexAIClient:
             "No valid authentication method found. "
             "Provide either project_id (for Vertex AI) or api_key (for AI Studio)"
         )
+    
+    def _cleanup_temp_file(self):
+        """Clean up temporary credentials file"""
+        if self._temp_creds_file:
+            try:
+                os.unlink(self._temp_creds_file.name)
+            except Exception:
+                pass
+            self._temp_creds_file = None
+    
+    def __del__(self):
+        """Cleanup on deletion"""
+        self._cleanup_temp_file()
     
     def generate_content(
         self,
@@ -286,7 +323,8 @@ def create_vertex_ai_client(
     project_id: Optional[str] = None,
     location: str = "us-central1",
     api_key: Optional[str] = None,
-    use_vertex: bool = True
+    use_vertex: bool = True,
+    credentials_json: Optional[str] = None
 ) -> VertexAIClient:
     """
     Factory function to create a Vertex AI client
@@ -297,6 +335,7 @@ def create_vertex_ai_client(
         location: GCP region
         api_key: Google API key (for AI Studio fallback)
         use_vertex: Try to use Vertex AI first
+        credentials_json: Service account JSON string (optional)
         
     Returns:
         VertexAIClient instance
@@ -306,5 +345,6 @@ def create_vertex_ai_client(
         project_id=project_id,
         location=location,
         api_key=api_key,
-        use_vertex=use_vertex
+        use_vertex=use_vertex,
+        credentials_json=credentials_json
     )

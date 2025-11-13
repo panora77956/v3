@@ -52,6 +52,7 @@ class GeminiClient:
     def _init_vertex_ai(self, model: Optional[str]):
         """
         Initialize Vertex AI client if configuration is available
+        Uses service account manager for round-robin across multiple accounts
         
         Returns:
             VertexAIClient instance or None
@@ -67,30 +68,64 @@ class GeminiClient:
             if not vertex_config.get('enabled', False):
                 return None
             
-            project_id = vertex_config.get('project_id', '')
-            location = vertex_config.get('location', 'us-central1')
-            
-            if not project_id:
-                print("[GeminiClient] Vertex AI enabled but project_id not configured")
-                return None
-            
-            # Import and create Vertex AI client
-            from services.vertex_ai_client import VertexAIClient
-            from services.core.api_config import VERTEX_AI_TEXT_MODEL
-            
-            vertex_model = model or VERTEX_AI_TEXT_MODEL
-            api_key = self.keys[0] if self.keys else None
-            
-            client = VertexAIClient(
-                model=vertex_model,
-                project_id=project_id,
-                location=location,
-                api_key=api_key,
-                use_vertex=True
-            )
-            
-            print(f"[GeminiClient] Vertex AI initialized successfully")
-            return client
+            # Try to use service account manager
+            try:
+                from services.vertex_service_account_manager import get_vertex_account_manager
+                
+                account_mgr = get_vertex_account_manager()
+                account_mgr.load_from_config(config)
+                
+                # Get next enabled account
+                account = account_mgr.get_next_account()
+                
+                if account:
+                    # Import and create Vertex AI client with service account
+                    from services.vertex_ai_client import VertexAIClient
+                    from services.core.api_config import VERTEX_AI_TEXT_MODEL
+                    
+                    vertex_model = model or VERTEX_AI_TEXT_MODEL
+                    api_key = self.keys[0] if self.keys else None
+                    
+                    client = VertexAIClient(
+                        model=vertex_model,
+                        project_id=account.project_id,
+                        location=account.location,
+                        api_key=api_key,
+                        use_vertex=True,
+                        credentials_json=account.credentials_json if account.credentials_json else None
+                    )
+                    
+                    print(f"[GeminiClient] Vertex AI initialized with account: {account.name}")
+                    return client
+                else:
+                    print("[GeminiClient] No enabled Vertex AI service accounts found")
+                    return None
+                    
+            except ImportError:
+                # Fallback to old config format if service account manager not available
+                project_id = vertex_config.get('project_id', '')
+                location = vertex_config.get('location', 'us-central1')
+                
+                if not project_id:
+                    print("[GeminiClient] Vertex AI enabled but project_id not configured")
+                    return None
+                
+                from services.vertex_ai_client import VertexAIClient
+                from services.core.api_config import VERTEX_AI_TEXT_MODEL
+                
+                vertex_model = model or VERTEX_AI_TEXT_MODEL
+                api_key = self.keys[0] if self.keys else None
+                
+                client = VertexAIClient(
+                    model=vertex_model,
+                    project_id=project_id,
+                    location=location,
+                    api_key=api_key,
+                    use_vertex=True
+                )
+                
+                print(f"[GeminiClient] Vertex AI initialized successfully (legacy config)")
+                return client
             
         except Exception as e:
             print(f"[GeminiClient] Failed to initialize Vertex AI: {e}")
