@@ -991,10 +991,10 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     
     Strategy:
     1. Dynamic timeout based on script duration (5-10 minutes for long scripts)
-    2. Moderate exponential backoff for 503 errors (5s → 10s → 15s → 20s) to reduce rate limiting
+    2. Aggressive exponential backoff for 503 errors (10s → 20s → 30s → 60s) to handle server overload
     3. Use all available API keys (up to 15) with proper rotation
     4. Fallback to alternative models (gemini-1.5-flash, gemini-2.0-flash-exp)
-    5. Add minimum delay between all API calls (3s) to prevent rate limiting
+    5. Add minimum delay between all API calls (5s) to prevent rate limiting and reduce 503 errors
     6. Detailed progress reporting
     
     Args:
@@ -1078,7 +1078,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
         for attempt in range(max_attempts):
             # Enforce minimum delay between API calls to prevent rate limiting
             # Gemini free tier: 15 RPM = 4s per request minimum
-            min_delay_between_calls = 3.0
+            # Increased to 5s to reduce 503 errors
+            min_delay_between_calls = 5.0
             time_since_last_call = time.time() - last_call_time
             if last_call_time > 0 and time_since_last_call < min_delay_between_calls:
                 delay_needed = min_delay_between_calls - time_since_last_call
@@ -1132,8 +1133,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # Moderate exponential backoff: 5s, 10s, 15s, 20s (more appropriate for rate limiting)
-                        backoff = min(5 * (attempt + 1), 20)
+                        # Aggressive exponential backoff for 503: 10s, 20s, 30s, 40s, 50s (capped at 60s)
+                        # 503 errors indicate server overload, need longer delays
+                        backoff = min(10 * (attempt + 1), 60)
                         
                         remaining = max_attempts - attempt - 1
                         report_progress(f"HTTP 503 error. Retrying with different key in {backoff}s ({remaining} attempts remaining)...")
@@ -1201,8 +1203,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     key_failure_count[key] = key_failure_count.get(key, 0) + 1
                     
                     if attempt < max_attempts - 1:
-                        # Moderate exponential backoff for 503: 5s, 10s, 15s, 20s
-                        backoff = min(5 * (attempt + 1), 20)
+                        # Aggressive exponential backoff for 503: 10s, 20s, 30s, 40s, 50s (capped at 60s)
+                        # 503 errors indicate server overload, need longer delays
+                        backoff = min(10 * (attempt + 1), 60)
                         
                         remaining = max_attempts - attempt - 1
                         report_progress(f"HTTP 503 error. Retrying with different key in {backoff}s ({remaining} attempts remaining)...")
