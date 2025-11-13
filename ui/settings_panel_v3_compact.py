@@ -107,17 +107,20 @@ class SettingsPanelV3Compact(QWidget):
         self._build_ui()
 
     def showEvent(self, event):
-        """Handle panel show - perform auto-migration on first show and reload config"""
+        """Handle panel show - perform auto-migration on first show"""
         super().showEvent(event)
 
-        # Reload config when panel is shown to display latest saved values
-        self.state = cfg.load()
-        self._refresh_ui_from_state()
-
-        # Auto-migrate on first show
-        if not self._migrated:
-            self._auto_migrate_old_config()
-            self._migrated = True
+        # Only reload config on first show or if explicitly needed
+        # Don't reload on every tab switch to preserve unsaved changes
+        if not hasattr(self, '_first_show_done'):
+            self.state = cfg.load()
+            self._refresh_ui_from_state()
+            self._first_show_done = True
+            
+            # Auto-migrate on first show
+            if not self._migrated:
+                self._auto_migrate_old_config()
+                self._migrated = True
 
     def _auto_migrate_old_config(self):
         """
@@ -799,6 +802,9 @@ class SettingsPanelV3Compact(QWidget):
             account_mgr.enable_account(row)
         else:
             account_mgr.disable_account(row)
+        
+        # Auto-save after toggling account
+        self._save_silently()
 
     def _add_account(self):
         """Add a new account via dialog"""
@@ -863,7 +869,11 @@ class SettingsPanelV3Compact(QWidget):
             account_mgr.add_account(account)
 
             self._load_accounts_table()
-            self.lb_account_status.setText(f"✓ Added account: {name}")
+            
+            # Auto-save after adding account
+            self._save_silently()
+            
+            self.lb_account_status.setText(f"✓ Added account: {name} (auto-saved)")
 
     def _edit_account(self):
         """Edit selected account"""
@@ -936,7 +946,11 @@ class SettingsPanelV3Compact(QWidget):
             account.tokens = tokens
 
             self._load_accounts_table()
-            self.lb_account_status.setText(f"✓ Updated account: {name}")
+            
+            # Auto-save after updating account
+            self._save_silently()
+            
+            self.lb_account_status.setText(f"✓ Updated account: {name} (auto-saved)")
 
     def _remove_account(self):
         """Remove selected account"""
@@ -961,7 +975,11 @@ class SettingsPanelV3Compact(QWidget):
         if reply == QMessageBox.Yes:
             account_mgr.remove_account(row)
             self._load_accounts_table()
-            self.lb_account_status.setText(f"✓ Removed account: {account.name}")
+            
+            # Auto-save after removing account
+            self._save_silently()
+            
+            self.lb_account_status.setText(f"✓ Removed account: {account.name} (auto-saved)")
 
     def _toggle_storage(self):
         is_local = self.rb_local.isChecked()
@@ -1037,6 +1055,9 @@ class SettingsPanelV3Compact(QWidget):
             account_mgr.enable_account(row)
         else:
             account_mgr.disable_account(row)
+        
+        # Auto-save after toggling account
+        self._save_silently()
 
     def _add_vertex_account(self):
         """Add new Vertex AI service account"""
@@ -1142,11 +1163,14 @@ class SettingsPanelV3Compact(QWidget):
 
             account_mgr.add_account(account)
             self._load_vertex_accounts_table()
+            
+            # Auto-save after adding account
+            self._save_silently()
 
             QMessageBox.information(
                 self,
                 "Success",
-                f"✅ Added service account: {name}\n\nProject ID: {project_id}"
+                f"✅ Added service account: {name}\n\nProject ID: {project_id}\n\nSettings auto-saved."
             )
 
     def _edit_vertex_account(self):
@@ -1245,6 +1269,11 @@ class SettingsPanelV3Compact(QWidget):
 
             account_mgr.update_account(row, updated_account)
             self._load_vertex_accounts_table()
+            
+            # Auto-save after updating account
+            self._save_silently()
+            
+            QMessageBox.information(self, "Success", f"✅ Updated service account: {name}\n\nSettings auto-saved.")
 
     def _remove_vertex_account(self):
         """Remove selected Vertex AI service account"""
@@ -1273,6 +1302,11 @@ class SettingsPanelV3Compact(QWidget):
         if reply == QMessageBox.Yes:
             account_mgr.remove_account(row)
             self._load_vertex_accounts_table()
+            
+            # Auto-save after removing account
+            self._save_silently()
+            
+            QMessageBox.information(self, "Success", f"✅ Removed service account: {account.name}\n\nSettings auto-saved.")
 
     def _check_vertex_credit(self, project_id: str, location: str):
         """Open GCP Console billing page to check credit usage"""
@@ -1320,6 +1354,54 @@ class SettingsPanelV3Compact(QWidget):
         msg.setIcon(QMessageBox.Information)
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec_()
+
+    def _save_silently(self):
+        """Save settings without showing the timestamp message - for auto-save"""
+        storage = 'gdrive' if self.rb_drive.isChecked() else 'local'
+        st = {
+            **cfg.load(),
+            'account_email': self.ed_email.text().strip(),
+            'download_storage': storage,
+            'download_root': self.ed_local.text().strip(),
+            'gdrive_folder_id': self.ed_gdrive.text().strip(),
+            'google_workspace_oauth_token': self.ed_oauth.text().strip(),
+            'google_api_keys': self.w_google.get_keys(),
+            'elevenlabs_api_keys': self.w_eleven.get_keys(),
+            'openai_api_keys': self.w_openai.get_keys(),
+            'default_voice_id': self.ed_voice.text().strip() or '3VnrjnYrskPMDsapTr8X',
+            'flow_project_id': self.ed_project.text().strip() or DEFAULT_PROJECT_ID,
+            'system_prompts_url': self.ed_sheets_url.text().strip(),
+            'labs_session_token': self.ed_whisk_session.text().strip(),
+            'whisk_bearer_token': self.ed_whisk_bearer.text().strip(),
+            'vertex_ai': {
+                'enabled': self.chk_vertex_enabled.isChecked(),
+                'use_vertex_first': self.chk_vertex_first.isChecked()
+            }
+        }
+
+        # Save multi-account manager data
+        from services.account_manager import get_account_manager
+        account_mgr = get_account_manager()
+        account_mgr.save_to_config(st)
+
+        # Save Vertex AI service accounts
+        from services.vertex_service_account_manager import get_vertex_account_manager
+        vertex_account_mgr = get_vertex_account_manager()
+        vertex_account_mgr.save_to_config(st)
+
+        cfg.save(st)
+
+        # Force refresh key_manager and config cache after saving
+        try:
+            from services.core import config as core_config
+            from services.core import key_manager
+            core_config.clear_cache()
+            key_manager.refresh(force=True)
+        except Exception as e:
+            logger.warning(f"Failed to refresh key manager cache: {e}")
+
+        # Update Vertex AI status after save
+        self._update_vertex_status()
 
     def _save(self):
         storage = 'gdrive' if self.rb_drive.isChecked() else 'local'
