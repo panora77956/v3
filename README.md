@@ -212,7 +212,9 @@ python3 main_image2video.py
 ### Developer Docs
 - [Configuration Guide](docs/CONFIGURATION.md)
 - [TTS Service](docs/TTS_SERVICE.md)
-- **[Audio Processing Workflow](docs/AUDIO_PROCESSING_WORKFLOW.md)** - 🎤 Complete audio generation guide
+- **[Audio Processing Workflow](docs/AUDIO_PROCESSING_WORKFLOW.md)** - 🎤 Complete audio generation guide (EN + VI)
+- **[Hướng Dẫn Audio](docs/HUONG_DAN_AUDIO_VI.md)** - 🎤 Quick guide tiếng Việt
+- **[Giải Thích Thư Mục Audio](docs/AUDIO_FOLDER_EXPLANATION.md)** - 🎤 Audio folder explanation
 - [Video Generation Fixes](docs/VIDEO_GENERATION_FIXES.md)
 - [New Features](docs/NEW_FEATURES.md)
 - **[Vietnamese Text Fix](docs/VIETNAMESE_TEXT_FIX.md)** - Vietnamese text overlay and encoding fix
