@@ -212,6 +212,7 @@ python3 main_image2video.py
 ### Developer Docs
 - [Configuration Guide](docs/CONFIGURATION.md)
 - [TTS Service](docs/TTS_SERVICE.md)
+- **[Audio Processing Workflow](docs/AUDIO_PROCESSING_WORKFLOW.md)** - 🎤 Complete audio generation guide
 - [Video Generation Fixes](docs/VIDEO_GENERATION_FIXES.md)
 - [New Features](docs/NEW_FEATURES.md)
 - **[Vietnamese Text Fix](docs/VIETNAMESE_TEXT_FIX.md)** - Vietnamese text overlay and encoding fix
@@ -225,6 +226,8 @@ python3 main_image2video.py
 ---
 
 ## 🏗️ Kiến Trúc / Architecture
+
+### Application Structure / Cấu Trúc Ứng Dụng
 
 ```
 v3/
@@ -241,14 +244,42 @@ v3/
 │   ├── image_gen_service.py    # Image generation
 │   ├── scene_detector.py       # Video scene detection
 │   ├── tts_service.py          # Text-to-speech
+│   ├── audio_generator.py      # Audio generation helper
 │   └── utils/                  # Service utilities
 ├── utils/                       # Shared utilities
 │   ├── logger_enhanced.py      # Structured logging
 │   ├── config_validator.py     # Config validation
 │   ├── performance.py          # Caching & pooling
 │   └── validation.py           # Input validation
+├── examples/                    # Example scripts
+│   ├── audio_workflow_demo.py  # 🎤 Audio generation demo
+│   └── generate_scene_audio.py # TTS examples
 └── docs/                        # Documentation
 ```
+
+### Project Folder Structure / Cấu Trúc Thư Mục Dự Án
+
+Mỗi dự án video tự động tạo cấu trúc sau:
+
+```
+<Tên-Dự-Án>/
+├── Video/              # Generated video clips
+├── Prompt/             # Scene prompts and scripts
+├── Ảnh xem trước/      # Preview images
+├── Audio/              # 🎤 Scene audio files (voiceover/dialogue)
+│   ├── scene_01_audio.mp3
+│   ├── scene_02_audio.mp3
+│   └── scene_XX_audio.mp3
+├── Bài đăng social.txt # Social media post text
+├── Phụ đề.srt          # Video subtitles
+├── Ảnh thumbnail.png   # Video thumbnail
+└── nhat_ky_xu_ly.log   # Processing log
+```
+
+**🎤 Thư mục Audio / Audio Folder:**
+- Tự động được tạo khi khởi tạo dự án
+- Chứa file thoại MP3 cho từng cảnh
+- Xem chi tiết: [Audio Processing Workflow](docs/AUDIO_PROCESSING_WORKFLOW.md)
 
 ---
 
