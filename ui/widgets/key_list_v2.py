@@ -392,3 +392,13 @@ class KeyListV2(QWidget):
     def get_keys(self):
         """Get all keys as list"""
         return self.keys.copy()
+    
+    def set_keys(self, keys):
+        """Set keys and refresh the display"""
+        self.keys = keys or []
+        self.validation_status = {}
+        
+        # Clear and repopulate list widget
+        self.list_widget.clear()
+        for key in self.keys:
+            self._add_key_item(key)
