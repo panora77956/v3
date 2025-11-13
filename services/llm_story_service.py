@@ -1110,6 +1110,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
 
                 headers = {"Content-Type": "application/json"}
                 data = {
+                    "system_instruction": {
+                        "parts": [{"text": "You are a professional AI assistant. Generate valid JSON output when requested."}]
+                    },
                     "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.9, "response_mime_type": "application/json"}
                 }
@@ -1118,7 +1121,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 report_progress(f"Attempt {attempt+1}/{max_attempts} with key {key_display} using {current_model}")
 
                 # Make request with dynamic timeout (separate connection and read timeout)
-                connection_timeout = 30  # 30 seconds to establish connection
+                connection_timeout = 60  # 60 seconds to establish connection
                 read_timeout = timeout  # Full timeout for reading response
                 
                 # Record call time for rate limiting
