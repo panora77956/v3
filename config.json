@@ -3,5 +3,11 @@
   "google_keys": [],
   "elevenlabs_keys": [],
   "default_project_id": "",
-  "download_root": ""
+  "download_root": "",
+  "vertex_ai": {
+    "enabled": false,
+    "project_id": "",
+    "location": "us-central1",
+    "use_vertex_first": true
+  }
 }
