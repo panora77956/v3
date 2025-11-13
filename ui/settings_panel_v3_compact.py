@@ -214,6 +214,13 @@ class SettingsPanelV3Compact(QWidget):
             # Reload accounts table
             if hasattr(self, 'accounts_table') and self.accounts_table is not None:
                 self._load_accounts_table()
+            
+            # Reload Vertex AI accounts from config
+            if hasattr(self, 'vertex_accounts_table') and self.vertex_accounts_table is not None:
+                from services.vertex_service_account_manager import get_vertex_account_manager
+                vertex_account_mgr = get_vertex_account_manager()
+                vertex_account_mgr.load_from_config(self.state)
+                self._load_vertex_accounts_table()
         except Exception as e:
             logger.warning(f"Error refreshing UI from state: {e}")
 
@@ -973,7 +980,6 @@ class SettingsPanelV3Compact(QWidget):
         from services.vertex_service_account_manager import get_vertex_account_manager
 
         account_mgr = get_vertex_account_manager()
-        account_mgr.load_from_config(cfg.load())
         accounts = account_mgr.get_all_accounts()
 
         self.vertex_accounts_table.setRowCount(len(accounts))
@@ -1383,7 +1389,6 @@ class SettingsPanelV3Compact(QWidget):
         # Check service accounts
         from services.vertex_service_account_manager import get_vertex_account_manager
         account_mgr = get_vertex_account_manager()
-        account_mgr.load_from_config(cfg.load())
         enabled_accounts = account_mgr.get_enabled_accounts()
 
         if enabled and len(enabled_accounts) > 0:
