@@ -1444,6 +1444,41 @@ class VideoBanHangV5(QWidget):
         """Write script"""
         cfg = self._collect_cfg()
 
+        # Check for content policy violations
+        try:
+            from services.google.content_policy_filter import check_prompt_violations
+            
+            # Check idea and product description
+            combined_text = f"{cfg.get('idea', '')} {cfg.get('product_main', '')}"
+            is_safe, warnings = check_prompt_violations(combined_text)
+            
+            if not is_safe:
+                from PyQt5.QtWidgets import QMessageBox
+                warning_text = "⚠️ Phát hiện các từ có thể vi phạm chính sách Google:\n\n"
+                warning_text += "\n".join(warnings)
+                warning_text += "\n\nBạn có muốn tiếp tục? (Có thể bị Google chặn)"
+                
+                reply = QMessageBox.question(
+                    self,
+                    "Cảnh báo nội dung",
+                    warning_text,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.No:
+                    self._append_log("[INFO] ⚠️ Người dùng hủy do cảnh báo nội dung")
+                    # Re-enable buttons
+                    self.btn_script.setEnabled(True)
+                    if hasattr(self, 'btn_auto'):
+                        self.btn_auto.setEnabled(True)
+                    return
+                else:
+                    self._append_log("[WARN] ⚠️ Người dùng tiếp tục dù có cảnh báo nội dung")
+        except Exception as e:
+            # If policy check fails, log but don't block
+            self._append_log(f"[WARN] Không thể kiểm tra chính sách nội dung: {e}")
+
         # Track script generation start time
         self._script_generation_start_time = datetime.datetime.now()
         self._append_log(f"⏱️ Bắt đầu tạo kịch bản: {self._script_generation_start_time.strftime('%H:%M:%S')}")

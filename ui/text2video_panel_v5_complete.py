@@ -1360,6 +1360,32 @@ class Text2VideoPanelV5(QWidget):
             QMessageBox.warning(self, "Thiếu thông tin", "Nhập ý tưởng trước.")
             return
 
+        # Check for content policy violations
+        try:
+            from services.google.content_policy_filter import check_prompt_violations
+            is_safe, warnings = check_prompt_violations(idea)
+            if not is_safe:
+                warning_text = "⚠️ Phát hiện các từ có thể vi phạm chính sách Google:\n\n"
+                warning_text += "\n".join(warnings)
+                warning_text += "\n\nBạn có muốn tiếp tục? (Có thể bị Google chặn)"
+                
+                reply = QMessageBox.question(
+                    self,
+                    "Cảnh báo nội dung",
+                    warning_text,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if reply == QMessageBox.No:
+                    self._append_log("[INFO] ⚠️ Người dùng hủy do cảnh báo nội dung")
+                    return
+                else:
+                    self._append_log("[WARN] ⚠️ Người dùng tiếp tục dù có cảnh báo nội dung")
+        except Exception as e:
+            # If policy check fails, log but don't block
+            self._append_log(f"[WARN] Không thể kiểm tra chính sách nội dung: {e}")
+
         self.btn_auto.setEnabled(False)
         self.btn_stop.setEnabled(True)
 

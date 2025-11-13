@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 Google Labs Content Policy Filter
-Sanitizes prompts to comply with Google's content policies, especially regarding minors.
+Sanitizes prompts to comply with Google's content policies.
 
-This module detects and rewrites prompts that may violate Google's policies about
-creating content featuring minors (children/teenagers under 18).
+This module detects and flags prompts that may violate Google's policies including:
+- Content featuring minors (children/teenagers under 18)
+- Violence and weapons
+- Adult/sexual content
+- Hate speech and discrimination
+- Dangerous activities
 """
 
 import re
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 # Keywords that indicate child/minor characters (Vietnamese + English)
 MINOR_KEYWORDS_VI = [
@@ -90,6 +94,56 @@ AGE_UP_REPLACEMENTS_EN = {
     "youth": "young adult"
 }
 
+# Violence and Weapons Keywords (Vietnamese + English)
+VIOLENCE_KEYWORDS_VI = [
+    "súng", "dao", "kiếm", "bom", "nổ", "đánh nhau", "đánh đập",
+    "giết", "chết", "máu", "bạo lực", "chiến tranh", "tấn công",
+    "đâm", "chém", "bắn", "vũ khí", "đạn", "lựu đạn", "nổ súng",
+    "thảm sát", "giết người", "ám sát", "khủng bố"
+]
+
+VIOLENCE_KEYWORDS_EN = [
+    "gun", "knife", "sword", "bomb", "explosion", "fighting", "beating",
+    "kill", "death", "blood", "violence", "war", "attack",
+    "stab", "slash", "shoot", "weapon", "bullet", "grenade", "gunfire",
+    "massacre", "murder", "assassination", "terrorism"
+]
+
+# Adult/Sexual Content Keywords (Vietnamese + English)
+ADULT_KEYWORDS_VI = [
+    "khỏa thân", "nude", "sex", "tình dục", "khiêu dâm", "porn",
+    "bikini nhỏ", "nội y", "hở hang", "gợi cảm thái quá"
+]
+
+ADULT_KEYWORDS_EN = [
+    "naked", "nude", "sex", "sexual", "pornography", "porn",
+    "explicit", "erotic", "sensual", "seductive"
+]
+
+# Hate Speech and Discrimination Keywords (Vietnamese + English)
+HATE_KEYWORDS_VI = [
+    "kỳ thị", "phân biệt chủng tộc", "thù ghét", "xúc phạm",
+    "miệt thị", "phỉ báng", "lăng mạ", "chửi bới"
+]
+
+HATE_KEYWORDS_EN = [
+    "racist", "discrimination", "hate", "offensive",
+    "derogatory", "slur", "bigotry", "xenophobic"
+]
+
+# Dangerous Activities Keywords (Vietnamese + English)
+DANGEROUS_KEYWORDS_VI = [
+    "tự tử", "tự sát", "tự làm hại", "tự gây thương tích",
+    "ma túy", "cocaine", "heroin", "cần sa",
+    "uống rượu lái xe", "lái xe nguy hiểm"
+]
+
+DANGEROUS_KEYWORDS_EN = [
+    "suicide", "self-harm", "self-injury", "cutting",
+    "drugs", "cocaine", "heroin", "cannabis", "marijuana",
+    "drunk driving", "dangerous driving", "illegal activity"
+]
+
 
 class ContentPolicyViolation(Exception):
     """Raised when content cannot be sanitized to comply with policies"""
@@ -150,6 +204,116 @@ class ContentPolicyFilter:
                 found.append((match.group(0), "en_age"))
         
         return found
+    
+    def detect_violence(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Detect violence and weapons references in text.
+        
+        Returns:
+            List of (keyword, category) tuples found in text
+        """
+        found = []
+        text_lower = text.lower()
+        
+        for keyword in VIOLENCE_KEYWORDS_VI:
+            if keyword in text_lower:
+                found.append((keyword, "violence_vi"))
+        
+        for keyword in VIOLENCE_KEYWORDS_EN:
+            if keyword in text_lower:
+                found.append((keyword, "violence_en"))
+        
+        return found
+    
+    def detect_adult_content(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Detect adult/sexual content references in text.
+        
+        Returns:
+            List of (keyword, category) tuples found in text
+        """
+        found = []
+        text_lower = text.lower()
+        
+        for keyword in ADULT_KEYWORDS_VI:
+            if keyword in text_lower:
+                found.append((keyword, "adult_vi"))
+        
+        for keyword in ADULT_KEYWORDS_EN:
+            if keyword in text_lower:
+                found.append((keyword, "adult_en"))
+        
+        return found
+    
+    def detect_hate_speech(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Detect hate speech and discrimination in text.
+        
+        Returns:
+            List of (keyword, category) tuples found in text
+        """
+        found = []
+        text_lower = text.lower()
+        
+        for keyword in HATE_KEYWORDS_VI:
+            if keyword in text_lower:
+                found.append((keyword, "hate_vi"))
+        
+        for keyword in HATE_KEYWORDS_EN:
+            if keyword in text_lower:
+                found.append((keyword, "hate_en"))
+        
+        return found
+    
+    def detect_dangerous_activities(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Detect dangerous activities references in text.
+        
+        Returns:
+            List of (keyword, category) tuples found in text
+        """
+        found = []
+        text_lower = text.lower()
+        
+        for keyword in DANGEROUS_KEYWORDS_VI:
+            if keyword in text_lower:
+                found.append((keyword, "dangerous_vi"))
+        
+        for keyword in DANGEROUS_KEYWORDS_EN:
+            if keyword in text_lower:
+                found.append((keyword, "dangerous_en"))
+        
+        return found
+    
+    def detect_all_violations(self, text: str) -> Dict[str, List[Tuple[str, str]]]:
+        """
+        Detect all policy violations in text.
+        
+        Returns:
+            Dictionary with violation categories and their detected keywords
+        """
+        return {
+            "minors": self.detect_minor_references(text),
+            "violence": self.detect_violence(text),
+            "adult_content": self.detect_adult_content(text),
+            "hate_speech": self.detect_hate_speech(text),
+            "dangerous_activities": self.detect_dangerous_activities(text)
+        }
+    
+    def check_prompt_safety(self, text: str) -> Tuple[bool, Dict[str, List[Tuple[str, str]]]]:
+        """
+        Check if prompt is safe according to Google's content policies.
+        
+        Returns:
+            Tuple of (is_safe, violations_dict)
+        """
+        violations = self.detect_all_violations(text)
+        
+        # Check if any violations exist
+        has_violations = any(len(v) > 0 for v in violations.values())
+        is_safe = not has_violations
+        
+        return is_safe, violations
     
     def age_up_text(self, text: str) -> str:
         """
@@ -335,6 +499,53 @@ class ContentPolicyFilter:
             return True
         
         return True
+
+
+def format_violation_warnings(violations: Dict[str, List[Tuple[str, str]]]) -> List[str]:
+    """
+    Format violation warnings for user-friendly display.
+    
+    Args:
+        violations: Dictionary of violations from detect_all_violations()
+    
+    Returns:
+        List of formatted warning messages
+    """
+    warnings = []
+    
+    category_names = {
+        "minors": "Trẻ em/Minors",
+        "violence": "Bạo lực/Violence",
+        "adult_content": "Nội dung người lớn/Adult Content",
+        "hate_speech": "Ngôn từ thù ghét/Hate Speech",
+        "dangerous_activities": "Hoạt động nguy hiểm/Dangerous Activities"
+    }
+    
+    for category, items in violations.items():
+        if items:
+            category_name = category_names.get(category, category)
+            keywords = ", ".join([f"'{item[0]}'" for item in items[:5]])  # Show first 5
+            if len(items) > 5:
+                keywords += f" (và {len(items) - 5} từ khác)"
+            warnings.append(f"⚠️ {category_name}: {keywords}")
+    
+    return warnings
+
+
+def check_prompt_violations(text: str) -> Tuple[bool, List[str]]:
+    """
+    Convenience function to check prompt for violations and get user-friendly warnings.
+    
+    Args:
+        text: Prompt text to check
+    
+    Returns:
+        Tuple of (is_safe, list_of_formatted_warnings)
+    """
+    filter = ContentPolicyFilter()
+    is_safe, violations = filter.check_prompt_safety(text)
+    warnings = format_violation_warnings(violations)
+    return is_safe, warnings
 
 
 def sanitize_prompt_for_google_labs(prompt_data: Any, enable_age_up: bool = True) -> Tuple[Any, List[str]]:
