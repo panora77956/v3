@@ -171,7 +171,7 @@ class ImageGenerationWorker(QThread):
         """Original sequential implementation - backward compatibility"""
         try:
             from services.core.config import load as load_cfg
-            cfg_data = load_cfg()
+            cfg_data = load_cfg(force_reload=True)  # Force reload to get latest config
             api_keys = cfg_data.get('google_api_keys', [])
 
             if not api_keys:
@@ -517,7 +517,7 @@ class ImageGenerationWorker(QThread):
         """Generate thumbnails sequentially (backward compatibility)"""
         try:
             from services.core.config import load as load_cfg
-            cfg_data = load_cfg()
+            cfg_data = load_cfg(force_reload=True)  # Force reload to get latest config
             api_keys = cfg_data.get('google_api_keys', [])
 
             social_media = self.outline.get("social_media", {})

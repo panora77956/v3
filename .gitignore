@@ -92,3 +92,4 @@ VeoProjects/
 temp/
 *.tmp
 outputs/
+test_config_persistence.py
