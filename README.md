@@ -137,7 +137,11 @@ ELEVENLABS_API_KEY=your-elevenlabs-key
 
 **📖 Setup Vertex AI:**
 1. Xem hướng dẫn chi tiết: **[Vertex AI Setup Guide](docs/VERTEX_AI_SETUP.md)**
-2. Cập nhật `config.json`:
+2. Cấu hình qua UI: **Settings Panel → Vertex AI Configuration**
+   - ➕ Add Service Account (paste JSON từ GCP Console)
+   - 💰 Check Credit: Click nút để xem credit còn lại
+   - 💰 View Pricing Info: Xem chi phí và ước tính
+3. Hoặc cập nhật `config.json` manually:
 ```json
 {
   "vertex_ai": {
@@ -148,6 +152,11 @@ ELEVENLABS_API_KEY=your-elevenlabs-key
   }
 }
 ```
+
+**💰 Monitor Credit Usage:**
+- Click nút **💰 Check** trong Settings Panel để xem credit còn lại
+- Mỗi GCP project mới = $300 credit free (90 days)
+- Thêm nhiều service accounts = nhiều project = nhiều credit!
 
 **💡 Tip:** Giữ nguyên API keys cũ trong config. Hệ thống sẽ tự động fallback về AI Studio nếu Vertex AI không khả dụng.
 
