@@ -4,7 +4,7 @@ API Configuration - Single Source of Truth for all API models and endpoints
 """
 
 # Models
-GEMINI_TEXT_MODEL = "gemini-1.5-flash"  # Changed from gemini-2.5-flash to avoid 503 errors
+GEMINI_TEXT_MODEL = "gemini-2.5-flash"
 GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image"  # FIXED: was "imagen-3.0-generate-001"
 
 # Base URLs

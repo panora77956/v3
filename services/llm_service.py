@@ -7,7 +7,7 @@ from services.gemini_client import GeminiClient
 
 
 def generate_text(system_prompt: str, user_prompt: str, temperature: float = 0.8, 
-                 model: str = "gemini-1.5-flash", timeout: int = 180) -> str:
+                 model: str = "gemini-2.5-flash", timeout: int = 180) -> str:
     """
     Generate text using Gemini API with specified temperature for creative output
     
@@ -15,7 +15,7 @@ def generate_text(system_prompt: str, user_prompt: str, temperature: float = 0.8
         system_prompt: System instruction for the LLM
         user_prompt: User prompt/query
         temperature: Controls randomness (0.0-1.0, higher = more creative)
-        model: Gemini model to use (default: gemini-1.5-flash for stability)
+        model: Gemini model to use
         timeout: Request timeout in seconds
         
     Returns:
@@ -45,6 +45,6 @@ def generate_with_config(config: Dict[str, Any]) -> str:
         system_prompt=config.get("system_prompt", ""),
         user_prompt=config.get("user_prompt", ""),
         temperature=config.get("temperature", 0.8),
-        model=config.get("model", "gemini-1.5-flash"),
+        model=config.get("model", "gemini-2.5-flash"),
         timeout=config.get("timeout", 180)
     )
