@@ -5,6 +5,7 @@ Fits in one screen
 """
 
 import datetime
+import logging
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -20,6 +21,9 @@ from ui.widgets.key_list_v2 import KeyListV2
 from utils import config as cfg
 from utils.version import get_version
 from services.account_manager import get_account_manager, LabsAccount
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # Typography
 FONT_H2 = QFont("Segoe UI", 14, QFont.Bold)
@@ -86,8 +90,13 @@ class SettingsPanelV3Compact(QWidget):
         self._build_ui()
 
     def showEvent(self, event):
-        """Handle panel show - perform auto-migration on first show"""
+        """Handle panel show - perform auto-migration on first show and reload config"""
         super().showEvent(event)
+        
+        # Reload config when panel is shown to display latest saved values
+        self.state = cfg.load()
+        self._refresh_ui_from_state()
+        
         # Auto-migrate on first show
         if not self._migrated:
             self._auto_migrate_old_config()
@@ -151,6 +160,45 @@ class SettingsPanelV3Compact(QWidget):
                     "Old tokens backed up as 'tokens_backup' in config."
                 )
 
+    def _refresh_ui_from_state(self):
+        """Refresh UI fields from current state"""
+        if not hasattr(self, 'ed_email'):
+            # UI not yet built
+            return
+        
+        try:
+            # Update all fields from state
+            self.ed_email.setText(self.state.get('account_email', ''))
+            
+            # Storage settings
+            storage = (self.state.get('download_storage') or 'local').lower()
+            (self.rb_drive if storage == 'gdrive' else self.rb_local).setChecked(True)
+            self.ed_local.setText(self.state.get('download_root', ''))
+            self.ed_gdrive.setText(self.state.get('gdrive_folder_id', ''))
+            self.ed_oauth.setText(self.state.get('google_workspace_oauth_token', ''))
+            
+            # API keys
+            if hasattr(self, 'w_google'):
+                self.w_google.set_keys(self.state.get('google_api_keys') or [])
+            if hasattr(self, 'w_eleven'):
+                self.w_eleven.set_keys(self.state.get('elevenlabs_api_keys') or [])
+            if hasattr(self, 'w_openai'):
+                self.w_openai.set_keys(self.state.get('openai_api_keys') or [])
+            
+            # Voice and project settings
+            self.ed_voice.setText(self.state.get('default_voice_id', '3VnrjnYrskPMDsapTr8X'))
+            self.ed_project.setText(self.state.get('flow_project_id', DEFAULT_PROJECT_ID))
+            self.ed_sheets_url.setText(self.state.get('system_prompts_url', 'https://docs.google.com/spreadsheets/d/1ohiL6xOBbjC7La2iUdkjrVjG4IEUnVWhI0fRoarD6P0'))
+            
+            # Whisk authentication
+            self.ed_whisk_session.setText(self.state.get('labs_session_token', ''))
+            self.ed_whisk_bearer.setText(self.state.get('whisk_bearer_token', ''))
+            
+            # Reload accounts table
+            if hasattr(self, 'accounts_table') and self.accounts_table is not None:
+                self._load_accounts_table()
+        except Exception as e:
+            logger.warning(f"Error refreshing UI from state: {e}")
 
     def _build_ui(self):
         scroll = QScrollArea()
@@ -784,6 +832,16 @@ class SettingsPanelV3Compact(QWidget):
         account_mgr.save_to_config(st)
 
         cfg.save(st)
+        
+        # FIX: Force refresh key_manager and config cache after saving
+        # This ensures API keys are immediately available without waiting for cache timeout
+        try:
+            from services.core import key_manager, config as core_config
+            core_config.clear_cache()  # Clear services/core/config cache
+            key_manager.refresh(force=True)  # Force refresh key pools
+        except Exception as e:
+            logger.warning(f"Failed to refresh key manager cache: {e}")
+        
         self.lb_saved.setText(f'✓ Saved at {_ts()}')
 
         QTimer.singleShot(5000, lambda: self.lb_saved.setText(''))
