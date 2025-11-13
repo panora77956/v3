@@ -4,8 +4,8 @@
 Test script for Vertex AI Credit Checker
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,9 +18,9 @@ def test_credit_checker():
     print("=" * 70)
     print("Testing Vertex AI Credit Checker")
     print("=" * 70)
-    
+
     checker = get_credit_checker()
-    
+
     # Test 1: Get billing console URL
     print("\n1. Testing Billing Console URL generation:")
     project_id = "test-project-12345"
@@ -30,7 +30,7 @@ def test_credit_checker():
     assert "console.cloud.google.com/billing" in url
     assert project_id in url
     print("   ✅ PASS")
-    
+
     # Test 2: Get Vertex AI console URL
     print("\n2. Testing Vertex AI Console URL generation:")
     location = "us-central1"
@@ -41,7 +41,7 @@ def test_credit_checker():
     assert "console.cloud.google.com/vertex-ai" in url
     assert project_id in url
     print("   ✅ PASS")
-    
+
     # Test 3: Get quotas console URL
     print("\n3. Testing Quotas Console URL generation:")
     url = checker.get_quotas_console_url(project_id)
@@ -50,7 +50,7 @@ def test_credit_checker():
     assert "console.cloud.google.com/apis" in url
     assert project_id in url
     print("   ✅ PASS")
-    
+
     # Test 4: Get estimated cost info
     print("\n4. Testing Cost Information retrieval:")
     cost_info = checker.get_estimated_cost_info()
@@ -62,7 +62,7 @@ def test_credit_checker():
     print(f"   Gemini 2.5 Flash output price: ${cost_info['gemini_2_5_flash']['output_price_per_1m_chars']}/1M chars")
     print(f"   Free tier: {cost_info['free_tier_info']['amount']} for {cost_info['free_tier_info']['duration']}")
     print("   ✅ PASS")
-    
+
     # Test 5: Format pricing info
     print("\n5. Testing Pricing Info formatting:")
     pricing_text = checker.format_pricing_info()
@@ -73,7 +73,7 @@ def test_credit_checker():
     assert "Gemini 2.5 Flash" in pricing_text
     assert "$300 credit" in pricing_text
     print("   ✅ PASS")
-    
+
     # Test 6: Get account info text
     print("\n6. Testing Account Info text generation:")
     account_text = checker.get_account_info_text(project_id, location)
@@ -87,7 +87,7 @@ def test_credit_checker():
     assert "Vertex AI" in account_text
     assert "Quotas" in account_text
     print("   ✅ PASS")
-    
+
     print("\n" + "=" * 70)
     print("✅ All tests passed!")
     print("=" * 70)
