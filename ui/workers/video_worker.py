@@ -1040,7 +1040,7 @@ class VideoGenerationWorker(QThread):
         try:
             # Create event handler that sends logs to queue
             def on_labs_event(event):
-                # Format log message
+                # Format log message - matches _handle_labs_event for consistency
                 kind = event.get("kind", "")
                 if kind == "video_generator_info":
                     gen_type = event.get("generator_type", "Unknown")
@@ -1052,6 +1052,33 @@ class VideoGenerationWorker(QThread):
                     endpoint_type = event.get("endpoint_type", "")
                     num_req = event.get("num_requests", 0)
                     msg = f"[INFO] API Call: {endpoint_type} endpoint | {num_req} request(s)"
+                    results_queue.put(("log", msg))
+                elif kind == "trying_model":
+                    model = event.get("model_key", "")
+                    msg = f"[DEBUG] Trying model: {model}"
+                    results_queue.put(("log", msg))
+                elif kind == "model_success":
+                    model = event.get("model_key", "")
+                    msg = f"[DEBUG] Model {model} succeeded"
+                    results_queue.put(("log", msg))
+                elif kind == "model_failed":
+                    model = event.get("model_key", "")
+                    error = event.get("error", "")
+                    msg = f"[WARN] Model {model} failed: {error}"
+                    results_queue.put(("log", msg))
+                elif kind == "operations_result":
+                    num_ops = event.get("num_operations", 0)
+                    msg = f"[DEBUG] API returned {num_ops} operations"
+                    results_queue.put(("log", msg))
+                elif kind == "start_one_result":
+                    count = event.get("operation_count", 0)
+                    requested = event.get("requested_copies", 0)
+                    msg = f"[INFO] Video generation: {count}/{requested} operations created"
+                    results_queue.put(("log", msg))
+                elif kind == "http_other_err":
+                    code = event.get("code", "")
+                    detail = event.get("detail", "")
+                    msg = f"[ERROR] HTTP {code}: {detail}"
                     results_queue.put(("log", msg))
 
             # Create client for this account

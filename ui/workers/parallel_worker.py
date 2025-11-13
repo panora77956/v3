@@ -133,13 +133,31 @@ class ParallelSeqWorker(QObject):
             # Import here to avoid circular imports
             from services.google.labs_flow_client import LabsFlowClient
 
+            # Create event handler for this thread
+            thread_name = f"T{thread_id+1}"
+            
+            def on_labs_event(event):
+                """Handle diagnostic events from LabsClient in parallel thread"""
+                kind = event.get("kind", "")
+                if kind == "http_other_err":
+                    code = event.get("code", "")
+                    detail = event.get("detail", "")
+                    self.log.emit("ERR", f"{thread_name}: HTTP {code}: {detail}")
+                elif kind == "video_generator_info":
+                    gen_type = event.get("generator_type", "Unknown")
+                    model = event.get("model_key", "")
+                    aspect = event.get("aspect_ratio", "")
+                    self.log.emit("INFO", f"{thread_name}: Video Generator: {gen_type} | Model: {model} | Aspect: {aspect}")
+                elif kind == "api_call_info":
+                    endpoint_type = event.get("endpoint_type", "")
+                    num_req = event.get("num_requests", 0)
+                    self.log.emit("INFO", f"{thread_name}: API Call: {endpoint_type} endpoint | {num_req} request(s)")
+
             # Create client for this account
-            client = LabsFlowClient(account.tokens, on_event=None)
+            client = LabsFlowClient(account.tokens, on_event=on_labs_event)
 
             # Use account-specific project_id instead of global one
             account_project_id = account.project_id
-
-            thread_name = f"T{thread_id+1}"
 
             # Process each job in batch sequentially
             for job_idx, job in batch:
@@ -257,8 +275,26 @@ class ParallelSeqWorker(QObject):
                 self.finished.emit(0)
                 return
 
+            # Create event handler for sequential mode
+            def on_labs_event(event):
+                """Handle diagnostic events from LabsClient in sequential mode"""
+                kind = event.get("kind", "")
+                if kind == "http_other_err":
+                    code = event.get("code", "")
+                    detail = event.get("detail", "")
+                    self.log.emit("ERR", f"HTTP {code}: {detail}")
+                elif kind == "video_generator_info":
+                    gen_type = event.get("generator_type", "Unknown")
+                    model = event.get("model_key", "")
+                    aspect = event.get("aspect_ratio", "")
+                    self.log.emit("INFO", f"Video Generator: {gen_type} | Model: {model} | Aspect: {aspect}")
+                elif kind == "api_call_info":
+                    endpoint_type = event.get("endpoint_type", "")
+                    num_req = event.get("num_requests", 0)
+                    self.log.emit("INFO", f"API Call: {endpoint_type} endpoint | {num_req} request(s)")
+
             # Create client
-            client = LabsFlowClient(account.tokens, on_event=None)
+            client = LabsFlowClient(account.tokens, on_event=on_labs_event)
 
             # Use account-specific project_id
             account_project_id = account.project_id
