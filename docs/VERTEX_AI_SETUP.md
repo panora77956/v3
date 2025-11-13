@@ -227,6 +227,65 @@ Hệ thống có cơ chế fallback thông minh:
 
 ---
 
+## Monitoring Credit Usage
+
+### Kiểm tra Credit qua UI
+
+Ứng dụng có tích hợp tính năng kiểm tra credit usage trực tiếp trong Settings Panel:
+
+1. **Mở Settings Panel** → **Vertex AI Configuration**
+2. **Trong bảng Service Accounts**, click nút **💰 Check** bên cạnh account muốn kiểm tra
+3. **Chọn một trong các options:**
+   - **🔗 Open Billing Console**: Xem chi tiết billing và credits còn lại
+   - **🔗 Open Vertex AI Console**: Xem dashboard và usage statistics
+   - **🔗 Open Quotas Console**: Xem quota limits và current usage
+
+### Kiểm tra Credit manually trên GCP Console
+
+1. Truy cập [Billing Overview](https://console.cloud.google.com/billing)
+2. Chọn project cần kiểm tra
+3. Xem phần **"Credits"** hoặc **"Promotional credits"**:
+   - **Current balance**: Credit còn lại
+   - **Usage to date**: Đã sử dụng bao nhiêu
+   - **Expiration date**: Ngày hết hạn
+
+### Xem Pricing Information
+
+Click nút **💰 View Pricing Info** trong Settings Panel để xem:
+- Chi phí cho từng model (Gemini 2.5 Flash, Gemini 1.5 Pro)
+- Thông tin free tier ($300 credit)
+- Ước tính chi phí cho workload của bạn
+
+### Tips để tối ưu credit usage
+
+1. **Sử dụng nhiều service accounts**: Mỗi GCP project mới = $300 credit mới
+2. **Chọn model phù hợp**: Gemini 2.5 Flash rẻ hơn nhiều so với Gemini 1.5 Pro
+3. **Monitor usage thường xuyên**: Click nút 💰 Check để xem credit còn lại
+4. **Setup billing alerts**: 
+   - Vào [Billing Budgets](https://console.cloud.google.com/billing/budgets)
+   - Tạo budget alert để nhận email khi sắp hết credit
+5. **Fallback to AI Studio**: Khi hết credit, hệ thống tự động fallback về AI Studio (free)
+
+### Example Cost Calculation
+
+**Scenario**: Generate 1000 video scripts
+
+- Input: ~10,000 characters/script
+- Output: ~5,000 characters/script
+
+**Using Gemini 2.5 Flash:**
+```
+Input cost:  1000 × 10,000 × $0.075/1M = $0.75
+Output cost: 1000 × 5,000 × $0.30/1M  = $1.50
+Total cost:                             = $2.25
+```
+
+**With $300 credit:**
+- Can generate ~133,000 scripts before running out!
+- Với nhiều accounts: 3 accounts × $300 = $900 → 400,000+ scripts
+
+---
+
 ## FAQ
 
 ### Q: Tôi có cần xóa API keys cũ không?
