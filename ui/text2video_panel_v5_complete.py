@@ -495,6 +495,19 @@ class Text2VideoPanelV5(QWidget):
         row_dt.addWidget(self.cb_topic, 1)
         project_layout.addLayout(row_dt)
 
+        # LLM Provider selection row
+        row_llm = QHBoxLayout()
+        lbl = QLabel("Model kịch bản:")
+        lbl.setFont(FONT_H2)
+        row_llm.addWidget(lbl)
+        self.cb_llm_provider = QComboBox()
+        self.cb_llm_provider.setMinimumHeight(32)
+        self.cb_llm_provider.addItems(["Gemini", "ChatGPT"])
+        self.cb_llm_provider.setToolTip("Chọn AI model để sinh kịch bản.\nGemini: Sử dụng Google API Key\nChatGPT: Sử dụng OpenAI API Key")
+        row_llm.addWidget(self.cb_llm_provider, 1)
+        row_llm.addStretch()
+        project_layout.addLayout(row_llm)
+
         colL.addWidget(project_group)
 
         # VIDEO SETTINGS - Always visible
@@ -1367,12 +1380,21 @@ class Text2VideoPanelV5(QWidget):
         base_seed = random.randint(0, 2**31 - 1)
         style_seed = random.randint(0, 2**31 - 1)  # PR #8: Separate seed for style
 
+        # Get LLM provider selection
+        llm_provider = self.cb_llm_provider.currentText()  # "Gemini" or "ChatGPT"
+        # Map to the format expected by generate_script
+        provider_map = {
+            "Gemini": "Gemini 2.5",
+            "ChatGPT": "OpenAI"
+        }
+        provider = provider_map.get(llm_provider, "Gemini 2.5")
+
         payload = dict(
             project=self.ed_project.text().strip(),
             idea=idea,
             style=self.cb_style.currentData() or "anime_2d",  # Use data key, fallback to anime_2d
             duration=int(self.sp_duration.value()),
-            provider="Gemini 2.5",
+            provider=provider,  # Use selected provider
             out_lang_code=self.cb_out_lang.currentData(),
             tts_provider=tts_provider,
             voice_id=voice_id,
