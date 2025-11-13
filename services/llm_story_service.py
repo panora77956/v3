@@ -985,7 +985,7 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
     txt=r.json()["choices"][0]["message"]["content"]
     return parse_llm_response_safe(txt, "OpenAI")
 
-def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None):
+def _call_gemini(prompt, api_key, model="gemini-1.5-flash", timeout=None, duration_seconds=None, progress_callback=None):
     """
     Call Gemini API with intelligent retry logic for 503 errors and timeouts
     
@@ -993,14 +993,14 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     1. Dynamic timeout based on script duration (5-10 minutes for long scripts)
     2. Moderate exponential backoff for 503 errors (5s → 10s → 15s → 20s) to reduce rate limiting
     3. Use all available API keys (up to 15) with proper rotation
-    4. Fallback to alternative models (gemini-1.5-flash, gemini-2.0-flash-exp)
+    4. Fallback to alternative models (gemini-1.5-pro, gemini-2.0-flash-exp)
     5. Add minimum delay between all API calls (3s) to prevent rate limiting
     6. Detailed progress reporting
     
     Args:
         prompt: Text prompt for Gemini
         api_key: Primary API key
-        model: Model name (default: gemini-2.5-flash)
+        model: Model name (default: gemini-1.5-flash - stable production model)
         timeout: Request timeout in seconds (default: auto-calculated)
         duration_seconds: Script duration to calculate appropriate timeout
         progress_callback: Optional callback(message, percent) for progress updates
@@ -1063,10 +1063,12 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
 
     # Fallback models to try if primary model fails
     fallback_models = []
-    if model == "gemini-2.5-flash":
-        # Use reliable fallback models that are known to be available
-        # gemini-2.0-flash-exp is used successfully in vision_prompt_generator.py
-        fallback_models = ["gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    if model == "gemini-1.5-flash":
+        # Use reliable fallback models - prefer stable models over experimental ones
+        fallback_models = ["gemini-1.5-pro", "gemini-2.0-flash-exp"]
+    elif model == "gemini-2.5-flash":
+        # For legacy 2.5 flash calls, fallback to stable 1.5 models
+        fallback_models = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
     # Try primary model first
     models_to_try = [model] + fallback_models
@@ -1103,9 +1105,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
             key_display = f"...{key[-4:]}" if len(key) > 4 else "****"
             
             try:
-                # Build endpoint
-                url = gemini_text_endpoint(key) if current_model == "gemini-2.5-flash" else \
-                      f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={key}"
+                # Build endpoint - use standard API for all models
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={key}"
 
                 headers = {"Content-Type": "application/json"}
                 data = {
@@ -1699,7 +1700,8 @@ CRITICAL: Maintain character visual_identity consistency. If characters appeared
             raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
         
         # Note: Progress is managed by the parent function (generate_script_scene_by_scene)
-        result = _call_gemini(prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None)
+        # Using default model (gemini-1.5-flash) for stability
+        result = _call_gemini(prompt, key, timeout=None, duration_seconds=None, progress_callback=None)
     else:
         key = api_key or ok
         if not key:
@@ -1804,7 +1806,8 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
         key = api_key or gk
         if not key:
             raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
-        metadata = _call_gemini(metadata_prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None)
+        # Using default model (gemini-1.5-flash) for stability
+        metadata = _call_gemini(metadata_prompt, key, timeout=None, duration_seconds=None, progress_callback=None)
     else:
         key = api_key or ok
         if not key:
@@ -1982,7 +1985,8 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
         else:
             report_progress("Đang chờ phản hồi từ Gemini... (có thể mất 1-2 phút)", 25)
         
-        res=_call_gemini(prompt, key, "gemini-2.5-flash", timeout=None, duration_seconds=duration_seconds, progress_callback=progress_callback)
+        # Using default model (gemini-1.5-flash) for stability
+        res=_call_gemini(prompt, key, timeout=None, duration_seconds=duration_seconds, progress_callback=progress_callback)
         report_progress("Đã nhận phản hồi từ Gemini", 50)
     else:
         key=api_key or ok
@@ -2156,7 +2160,8 @@ Trả về JSON với format:
         key = api_key or gk
         if not key:
             raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
-        res = _call_gemini(prompt, key, "gemini-2.5-flash")
+        # Using default model (gemini-1.5-flash) for stability
+        res = _call_gemini(prompt, key)
     else:
         key = api_key or ok
         if not key:
@@ -2249,7 +2254,8 @@ Trả về JSON với format:
         key = api_key or gk
         if not key:
             raise RuntimeError("Chưa cấu hình Google API Key cho Gemini.")
-        res = _call_gemini(prompt, key, "gemini-2.5-flash")
+        # Using default model (gemini-1.5-flash) for stability
+        res = _call_gemini(prompt, key)
     else:
         key = api_key or ok
         if not key:
