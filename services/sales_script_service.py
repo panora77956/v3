@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from typing import Dict, Any
-import datetime, json, re, logging
+import datetime, json, re, logging, requests
 from pathlib import Path
 from services.gemini_client import GeminiClient
 from services import domain_prompts
@@ -453,11 +453,56 @@ def build_outline(cfg:Dict[str,Any])->Dict[str,Any]:
     # Log language configuration for debugging
     speech_lang = cfg.get("speech_lang", "vi")
     voice_id = cfg.get("voice_id", "")
-    logger.info(f"build_outline: speech_lang={speech_lang}, voice_id={voice_id}")
+    script_model = cfg.get("script_model", "Gemini")  # Get model selection (Gemini or ChatGPT)
+    logger.info(f"build_outline: speech_lang={speech_lang}, voice_id={voice_id}, script_model={script_model}")
 
-    client = GeminiClient()
+    # Build system prompt
     sys_prompt = _build_system_prompt(cfg, sceneCount, models_json, product_count)
-    raw = client.generate(sys_prompt, "Return ONLY the JSON object. No prose.", timeout=240)
+    
+    # Initialize variables for API calls
+    client = None
+    api_key = None
+    url = None
+    headers = None
+    
+    # Generate script based on selected model
+    if script_model == "ChatGPT":
+        # Use OpenAI API
+        from services.core.key_manager import get_key
+        
+        api_key = get_key('openai')
+        if not api_key:
+            raise RuntimeError("Chưa cấu hình OpenAI API Key. Vui lòng thêm API key trong tab Cài đặt.")
+        
+        logger.info("Using ChatGPT (OpenAI) for script generation")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": "gpt-4-turbo",
+            "messages": [
+                {"role": "system", "content": "You output strictly JSON when asked."},
+                {"role": "user", "content": sys_prompt + "\n\nReturn ONLY the JSON object. No prose."}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.9
+        }
+        
+        try:
+            r = requests.post(url, headers=headers, json=data, timeout=240)
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"OpenAI API error: {e}")
+            raise RuntimeError(f"Lỗi khi gọi OpenAI API: {str(e)}")
+    else:
+        # Use Gemini API (default)
+        logger.info("Using Gemini for script generation")
+        client = GeminiClient()
+        raw = client.generate(sys_prompt, "Return ONLY the JSON object. No prose.", timeout=240)
+    
     script_json = _try_parse_json(raw)
 
     scenes = script_json.get("scenes", [])
@@ -521,7 +566,29 @@ def build_outline(cfg:Dict[str,Any])->Dict[str,Any]:
     social_media = {"versions": []}
     try:
         social_prompt = _build_social_media_prompt(cfg, outline_vi)
-        social_raw = client.generate(social_prompt, "Return ONLY valid JSON.", timeout=120)
+        
+        # Use the same model as script generation
+        if script_model == "ChatGPT":
+            # Use OpenAI API for social media
+            try:
+                r = requests.post(url, headers=headers, json={
+                    "model": "gpt-4-turbo",
+                    "messages": [
+                        {"role": "system", "content": "You output strictly JSON when asked."},
+                        {"role": "user", "content": social_prompt + "\n\nReturn ONLY valid JSON."}
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.9
+                }, timeout=120)
+                r.raise_for_status()
+                social_raw = r.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                logger.warning(f"OpenAI social media generation failed: {e}")
+                raise
+        else:
+            # Use Gemini for social media
+            social_raw = client.generate(social_prompt, "Return ONLY valid JSON.", timeout=120)
+        
         social_json = _try_parse_json(social_raw)
         social_media = social_json if "versions" in social_json else {"versions": []}
     except Exception as e:
