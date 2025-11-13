@@ -24,6 +24,7 @@
 - ✅ Xử lý batch với connection pooling
 - ✅ Ocean blue theme với tabs navigation
 - ✅ **NEW**: Lịch sử tạo video (History Tab)
+- ✅ **NEW v7.3.4**: Kiểm tra vi phạm chính sách Google (Content Policy Filter)
 
 ### 🎯 Video Bán Hàng V5 / Sales Video
 - ✅ Tạo kịch bản bán hàng tự động
@@ -31,6 +32,7 @@
 - ✅ Scene-by-scene generation
 - ✅ Collapsible sections UI
 - ✅ **NEW**: Lịch sử tạo video (History Tab)
+- ✅ **NEW v7.3.4**: Kiểm tra vi phạm chính sách Google (Content Policy Filter)
 
 ### 🔄 Clone Video
 - ✅ Clone video từ TikTok/YouTube
@@ -256,6 +258,7 @@ python3 main_image2video.py
 - **[History Tab Feature](docs/HISTORY_TAB_FEATURE.md)** - Video creation history tracking
 - **[History Tab UI Mockup](docs/HISTORY_TAB_UI_MOCKUP.md)** - Visual UI design
 - **[Video Merge UI Reorganization](docs/VIDEO_MERGE_UI_REORGANIZATION.md)** - 2-row layout redesign
+- **[Content Policy Filter](docs/CONTENT_POLICY_FILTER.md)** - 🛡️ **NEW v7.3.4**: Comprehensive violation detection
 
 ### Archive
 - [Historical Documentation](docs/archive/) - Previous versions and bug fixes
@@ -437,6 +440,17 @@ python3 -c "from utils.config_validator import validate_config; validate_config(
 ---
 
 ## 📊 Phiên Bản / Version History
+
+### v7.3.4 (2025-11-13) - Content Policy Filter Enhancement
+- 🛡️ **NEW FEATURE**: Comprehensive content policy violation detection
+- ⚠️ **NEW**: Pre-submission warnings for potential Google policy violations
+- 🔍 **Detection**: 5 violation categories (minors, violence, adult content, hate speech, dangerous activities)
+- 🌐 **Bilingual**: Support for Vietnamese and English keywords
+- 🎯 **UI Integration**: Warning dialogs in Text2Video and Video Bán Hàng panels
+- ✅ **User Choice**: Proceed with warning or cancel to edit content
+- 📊 **Testing**: 17 comprehensive unit tests (100% passing)
+- 📚 **Documentation**: Complete guide in [CONTENT_POLICY_FILTER.md](docs/CONTENT_POLICY_FILTER.md)
+- 🔄 **Backward Compatible**: Existing code continues to work without changes
 
 ### v7.3.3 (2025-11-12) - Enhanced Whisk Service (Complete API)
 - 🎨 **NEW**: Text-to-image generation without reference images (`generate_image_text_only()`)
