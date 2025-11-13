@@ -111,7 +111,39 @@ class VisionPromptGenerator:
         # Build system instruction based on language and style
         system_instruction = self._build_system_instruction(language, style)
 
-        # Call Gemini Vision API
+        # Try Vertex AI first if configured
+        try:
+            import json
+            with open('config.json', 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            vertex_config = config.get('vertex_ai', {})
+            
+            if vertex_config.get('enabled', False) and vertex_config.get('project_id'):
+                try:
+                    from services.vertex_ai_client import VertexAIClient
+                    
+                    self.log(f"[VisionPrompt] Trying Vertex AI for vision task...")
+                    
+                    vertex_client = VertexAIClient(
+                        model="gemini-2.0-flash-exp",
+                        project_id=vertex_config.get('project_id'),
+                        location=vertex_config.get('location', 'us-central1'),
+                        api_key=self.api_key,
+                        use_vertex=True
+                    )
+                    
+                    # Note: Vertex AI vision API requires different handling
+                    # For now, fallback to AI Studio for vision tasks
+                    # TODO: Implement proper Vertex AI vision support
+                    raise NotImplementedError("Vertex AI vision support coming soon")
+                    
+                except Exception as ve:
+                    self.log(f"[VisionPrompt] Vertex AI not available, using AI Studio: {ve}")
+        except Exception:
+            pass
+
+        # Fallback to AI Studio API (original logic)
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={self.api_key}"
 
         payload = {

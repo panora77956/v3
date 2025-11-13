@@ -987,9 +987,10 @@ def _call_openai(prompt, api_key, model="gpt-4-turbo"):
 
 def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, duration_seconds=None, progress_callback=None):
     """
-    Call Gemini API with intelligent retry logic for 503 errors and timeouts
+    Call Gemini API with Vertex AI support and intelligent retry logic for 503 errors
     
     Strategy:
+    0. Try Vertex AI first if configured (better rate limits, less 503 errors)
     1. Dynamic timeout based on script duration (5-10 minutes for long scripts)
     2. Aggressive exponential backoff for 503 errors (10s → 20s → 30s → 60s) to handle server overload
     3. Use all available API keys (up to 15) with proper rotation
@@ -1006,6 +1007,7 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
         progress_callback: Optional callback(message, percent) for progress updates
     """
     import time
+    import json
 
     from services.core.api_config import gemini_text_endpoint
     from services.core.key_manager import get_all_keys
@@ -1015,6 +1017,68 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
         if progress_callback:
             progress_callback(msg, None)
         print(f"[INFO] {msg}")
+
+    # ===== STRATEGY 0: Try Vertex AI first =====
+    # Check if Vertex AI is enabled in config
+    try:
+        with open('config.json', 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        
+        vertex_config = config.get('vertex_ai', {})
+        
+        if vertex_config.get('enabled', False) and vertex_config.get('project_id'):
+            try:
+                from services.vertex_ai_client import VertexAIClient
+                from services.core.api_config import VERTEX_AI_TEXT_MODEL
+                
+                # Calculate appropriate timeout
+                if timeout is None:
+                    if duration_seconds and duration_seconds > 120:
+                        if duration_seconds >= 460:
+                            timeout = 600
+                        elif duration_seconds >= 300:
+                            timeout = 480
+                        elif duration_seconds >= 180:
+                            timeout = 360
+                        else:
+                            timeout = 300
+                    else:
+                        timeout = 180
+                
+                # Use Vertex AI model if specified, otherwise use default
+                vertex_model = VERTEX_AI_TEXT_MODEL if model == "gemini-2.5-flash" else model
+                
+                report_progress(f"Trying Vertex AI with model {vertex_model}...")
+                
+                vertex_client = VertexAIClient(
+                    model=vertex_model,
+                    project_id=vertex_config.get('project_id'),
+                    location=vertex_config.get('location', 'us-central1'),
+                    api_key=api_key,
+                    use_vertex=True
+                )
+                
+                # Generate content - VertexAIClient handles retries internally
+                result = vertex_client.generate_content(
+                    prompt=prompt,
+                    system_instruction="You are a professional AI assistant. Generate valid JSON output when requested.",
+                    temperature=0.9,
+                    timeout=timeout,
+                    max_retries=5
+                )
+                
+                report_progress("✓ Vertex AI generation successful")
+                return parse_llm_response_safe(result, "Vertex AI")
+                
+            except Exception as e:
+                report_progress(f"Vertex AI failed: {e}. Falling back to AI Studio API...")
+                # Continue to AI Studio fallback below
+    except Exception as e:
+        # Config file error or Vertex AI import error - continue to AI Studio
+        pass
+    
+    # ===== AI Studio fallback (original logic) =====
+    report_progress("Using AI Studio API...")
 
     # Dynamic timeout calculation based on script duration and complexity
     if timeout is None:
