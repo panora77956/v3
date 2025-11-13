@@ -432,12 +432,13 @@ class SettingsPanelV3Compact(QWidget):
         
         # Service Accounts table
         self.vertex_accounts_table = QTableWidget()
-        self.vertex_accounts_table.setColumnCount(4)
-        self.vertex_accounts_table.setHorizontalHeaderLabels(["Enabled", "Account Name", "Project ID", "Region"])
+        self.vertex_accounts_table.setColumnCount(5)
+        self.vertex_accounts_table.setHorizontalHeaderLabels(["Enabled", "Account Name", "Project ID", "Region", "Credit"])
         self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.vertex_accounts_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.vertex_accounts_table.setMaximumHeight(150)
         self.vertex_accounts_table.setAlternatingRowColors(True)
         self.vertex_accounts_table.setToolTip(
@@ -478,6 +479,13 @@ class SettingsPanelV3Compact(QWidget):
         self.btn_remove_vertex_account = CompactButton("🗑️ Remove")
         self.btn_remove_vertex_account.clicked.connect(self._remove_vertex_account)
         vertex_buttons.addWidget(self.btn_remove_vertex_account)
+        
+        self.btn_pricing_info = CompactButton("💰 View Pricing Info")
+        self.btn_pricing_info.clicked.connect(self._show_pricing_info)
+        self.btn_pricing_info.setToolTip(
+            "Xem thông tin chi phí và cách tính toán credit cho Vertex AI"
+        )
+        vertex_buttons.addWidget(self.btn_pricing_info)
         
         vertex_buttons.addStretch()
         
@@ -974,6 +982,21 @@ class SettingsPanelV3Compact(QWidget):
             # Region
             region_item = QTableWidgetItem(account.location)
             self.vertex_accounts_table.setItem(row, 3, region_item)
+            
+            # Credit check button
+            credit_widget = QWidget()
+            credit_layout = QHBoxLayout(credit_widget)
+            credit_layout.setContentsMargins(2, 2, 2, 2)
+            credit_layout.setAlignment(Qt.AlignCenter)
+            credit_btn = CompactButton("💰 Check")
+            credit_btn.setMaximumWidth(80)
+            credit_btn.setToolTip(
+                f"Mở GCP Console để kiểm tra credit còn lại\n"
+                f"Project: {account.project_id}"
+            )
+            credit_btn.clicked.connect(lambda checked, p=account.project_id, l=account.location: self._check_vertex_credit(p, l))
+            credit_layout.addWidget(credit_btn)
+            self.vertex_accounts_table.setCellWidget(row, 4, credit_widget)
 
     def _toggle_vertex_account(self, row, state):
         """Toggle Vertex AI service account enabled state"""
@@ -1216,6 +1239,53 @@ class SettingsPanelV3Compact(QWidget):
         if reply == QMessageBox.Yes:
             account_mgr.remove_account(row)
             self._load_vertex_accounts_table()
+    
+    def _check_vertex_credit(self, project_id: str, location: str):
+        """Open GCP Console billing page to check credit usage"""
+        from services.vertex_credit_checker import get_credit_checker
+        
+        credit_checker = get_credit_checker()
+        
+        # Show info dialog with links
+        info_text = credit_checker.get_account_info_text(project_id, location)
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Check Vertex AI Credit")
+        msg.setText(f"Project: {project_id}")
+        msg.setInformativeText(info_text)
+        msg.setIcon(QMessageBox.Information)
+        
+        # Add custom buttons
+        btn_billing = msg.addButton("🔗 Open Billing Console", QMessageBox.ActionRole)
+        btn_vertex = msg.addButton("🔗 Open Vertex AI Console", QMessageBox.ActionRole)
+        btn_quotas = msg.addButton("🔗 Open Quotas Console", QMessageBox.ActionRole)
+        btn_close = msg.addButton(QMessageBox.Close)
+        
+        msg.exec_()
+        
+        # Handle button clicks
+        clicked = msg.clickedButton()
+        if clicked == btn_billing:
+            credit_checker.open_billing_console(project_id)
+        elif clicked == btn_vertex:
+            credit_checker.open_vertex_console(project_id, location)
+        elif clicked == btn_quotas:
+            credit_checker.open_quotas_console(project_id)
+    
+    def _show_pricing_info(self):
+        """Show Vertex AI pricing information"""
+        from services.vertex_credit_checker import get_credit_checker
+        
+        credit_checker = get_credit_checker()
+        pricing_text = credit_checker.format_pricing_info()
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Vertex AI Pricing Information")
+        msg.setText("💰 Thông tin chi phí và credit Vertex AI")
+        msg.setInformativeText(pricing_text)
+        msg.setIcon(QMessageBox.Information)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
 
     def _save(self):
         storage = 'gdrive' if self.rb_drive.isChecked() else 'local'
