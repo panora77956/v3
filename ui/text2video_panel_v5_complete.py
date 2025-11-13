@@ -1847,6 +1847,19 @@ class Text2VideoPanelV5(QWidget):
                 self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
                 self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
 
+        # Generate audio for each scene before video generation
+        self._append_log("[INFO] 🎤 Bắt đầu tạo audio cho các cảnh...")
+        if self._script_data and "scenes" in self._script_data:
+            scene_list = self._script_data["scenes"]
+            for r in range(min(len(scene_list), self.table.rowCount())):
+                scene_data = scene_list[r]
+                scene_idx = r + 1
+                
+                # Generate audio for this scene
+                self._generate_scene_audio(scene_idx, scene_data)
+        else:
+            self._append_log("[WARN] Không có dữ liệu kịch bản để tạo audio")
+
         # Track video creation start time
         self._video_creation_start_time = datetime.datetime.now()
         self._append_log(f"[INFO] ⏱️ Bắt đầu tạo video: {self._video_creation_start_time.strftime('%H:%M:%S')}")
@@ -1965,6 +1978,19 @@ class Text2VideoPanelV5(QWidget):
                 self._append_log(f"[ERROR] Không thể kết hợp prompts: {str(e)}")
                 self._append_log("[INFO] Sẽ tạo video theo cách thông thường (nhiều cảnh riêng lẻ)")
 
+        # Generate audio for each scene before video generation
+        self._append_log("[INFO] 🎤 Bắt đầu tạo audio cho các cảnh...")
+        if self._script_data and "scenes" in self._script_data:
+            scene_list = self._script_data["scenes"]
+            for r in range(min(len(scene_list), self.table.rowCount())):
+                scene_data = scene_list[r]
+                scene_idx = r + 1
+                
+                # Generate audio for this scene
+                self._generate_scene_audio(scene_idx, scene_data)
+        else:
+            self._append_log("[WARN] Không có dữ liệu kịch bản để tạo audio")
+
         self._append_log("[INFO] Bắt đầu tạo video...")
         self._run_in_thread("video", payload)
 
@@ -2072,6 +2098,96 @@ class Text2VideoPanelV5(QWidget):
             self._append_log("[INFO] Cancelling video generation...")
             self.progress_label.setText("Cancelling...")
             self.video_worker.cancel()
+
+    def _generate_scene_audio(self, scene_idx, scene_data):
+        """Generate audio file for a scene"""
+        try:
+            # Import audio generation service
+            from services.audio_generator import generate_scene_audio
+            from pathlib import Path
+            
+            # Get project title and audio directory
+            project_name = self._title or "text2video_project"
+            if cfg:
+                st = cfg.load()
+                root = st.get("download_root") or st.get("download_dir", "")
+                if root:
+                    sanitized_name = sanitize_project_name(project_name)
+                    audio_dir = str(Path(root) / sanitized_name / "Audio")
+                    Path(audio_dir).mkdir(parents=True, exist_ok=True)
+                else:
+                    # Fallback to Downloads folder
+                    sanitized_name = sanitize_project_name(project_name)
+                    audio_dir = str(Path.home() / "Downloads" / sanitized_name / "Audio")
+                    Path(audio_dir).mkdir(parents=True, exist_ok=True)
+            else:
+                # Fallback to Downloads folder
+                sanitized_name = sanitize_project_name(project_name)
+                audio_dir = str(Path.home() / "Downloads" / sanitized_name / "Audio")
+                Path(audio_dir).mkdir(parents=True, exist_ok=True)
+            
+            self._append_log(f"🎤 Bắt đầu tạo audio cho cảnh {scene_idx}...")
+            
+            # Extract voiceover/speech text from scene
+            speech_text = ""
+            
+            # Get dialogues if available
+            dialogues = scene_data.get("dialogues", [])
+            if dialogues and len(dialogues) > 0:
+                # Combine all dialogue texts
+                speech_texts = []
+                for dialogue in dialogues:
+                    text = dialogue.get("text_vi") or dialogue.get("text") or dialogue.get("dialogue", "")
+                    if text:
+                        speech_texts.append(text)
+                speech_text = " ".join(speech_texts)
+            
+            # Fallback to prompt text if no dialogues
+            if not speech_text:
+                speech_text = scene_data.get("prompt_vi") or scene_data.get("prompt", "")
+            
+            if not speech_text:
+                self._append_log(f"⚠️ Cảnh {scene_idx} không có lời thoại, bỏ qua tạo audio")
+                return None
+            
+            # Get TTS settings from UI
+            tts_provider = self.cb_tts_provider.currentData() if hasattr(self, 'cb_tts_provider') else "google"
+            voice_id = self.ed_custom_voice.text().strip() if hasattr(self, 'ed_custom_voice') else ""
+            if not voice_id and hasattr(self, 'cb_voice'):
+                voice_id = self.cb_voice.currentData() or "vi-VN-Wavenet-A"
+            else:
+                voice_id = voice_id or "vi-VN-Wavenet-A"
+            
+            lang_code = self.cb_out_lang.currentData() if hasattr(self, 'cb_out_lang') else "vi"
+            
+            # Build audio scene data
+            audio_scene_data = {
+                "scene_index": scene_idx,
+                "audio": {
+                    "voiceover": {
+                        "tts_provider": tts_provider,
+                        "voice_id": voice_id,
+                        "language": lang_code,
+                        "text": speech_text
+                    }
+                }
+            }
+            
+            # Generate audio
+            audio_path = generate_scene_audio(audio_scene_data, audio_dir, scene_idx)
+            
+            if audio_path:
+                self._append_log(f"✓ Đã tạo audio cho cảnh {scene_idx}: {os.path.basename(audio_path)}")
+                return audio_path
+            else:
+                self._append_log(f"❌ Không thể tạo audio cho cảnh {scene_idx}")
+                return None
+                
+        except Exception as e:
+            self._append_log(f"❌ Lỗi khi tạo audio cảnh {scene_idx}: {e}")
+            import traceback
+            self._append_log(f"[DEBUG] {traceback.format_exc()}")
+            return None
 
     def _render_card_text(self, scene:int):
         """Render card text with plain text formatting - BUG FIX #3: Show failed count"""
