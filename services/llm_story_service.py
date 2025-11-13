@@ -1021,8 +1021,8 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
     # ===== STRATEGY 0: Try Vertex AI first =====
     # Check if Vertex AI is enabled in config
     try:
-        with open('config.json', 'r', encoding='utf-8') as f:
-            config = json.load(f)
+        from utils import config as cfg
+        config = cfg.load()
         
         vertex_config = config.get('vertex_ai', {})
         
