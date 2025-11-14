@@ -1985,6 +1985,17 @@ class VideoBanHangV5(QWidget):
             self._generate_next_scene()
             return
 
+        # Get image path from cache for image-to-video generation
+        image_path = self.cache["scene_images"].get(scene_idx)
+        if not image_path:
+            self._append_log(f"❌ Cảnh {scene_idx} không có đường dẫn ảnh trong cache")
+            self._failed_scenes.append(scene_idx)
+            # Continue to next scene
+            self._generate_next_scene()
+            return
+
+        self._append_log(f"📸 Sử dụng ảnh: {image_path}")
+
         # Get aspect ratio
         aspect_ratio = cfg.get("ratio", "9:16")
         aspect_map = {
@@ -2004,14 +2015,15 @@ class VideoBanHangV5(QWidget):
             dir_videos = str(Path.home() / "Downloads" / sanitized_name / "Video")
             Path(dir_videos).mkdir(parents=True, exist_ok=True)
 
-        # Prepare payload
+        # Prepare payload with image_path for image-to-video generation
         payload = {
             "scenes": [{
                 "prompt": video_prompt,
-                "aspect": aspect_api
+                "aspect": aspect_api,
+                "image_path": image_path
             }],
             "copies": 1,
-            "model_key": "veo_3_1_t2v_fast_ultra",
+            "model_key": "veo_3_1_i2v_s_fast_ultra",  # Use I2V model for image-to-video
             "title": f"{project_name}_scene{scene_idx}",
             "dir_videos": dir_videos,
             "upscale_4k": False,
@@ -2183,6 +2195,17 @@ class VideoBanHangV5(QWidget):
         # Generate audio for this scene first
         self._generate_scene_audio(scene_idx, target_scene, cfg)
 
+        # Get image path from cache for image-to-video generation
+        image_path = self.cache["scene_images"].get(scene_idx)
+        if not image_path:
+            QMessageBox.warning(
+                self, "Lỗi",
+                f"Không tìm thấy đường dẫn ảnh cho cảnh {scene_idx}"
+            )
+            return
+
+        self._append_log(f"📸 Sử dụng ảnh: {image_path}")
+
         # Get video prompt
         video_prompt = target_scene.get("prompt_video", "")
         if not video_prompt:
@@ -2213,14 +2236,15 @@ class VideoBanHangV5(QWidget):
             dir_videos = str(Path.home() / "Downloads" / sanitized_name / "Video")
             Path(dir_videos).mkdir(parents=True, exist_ok=True)
 
-        # Prepare payload for video worker
+        # Prepare payload for video worker with image_path for image-to-video
         payload = {
             "scenes": [{
                 "prompt": video_prompt,
-                "aspect": aspect_api
+                "aspect": aspect_api,
+                "image_path": image_path
             }],
             "copies": 1,
-            "model_key": "veo_3_1_t2v_fast_ultra",  # Default model
+            "model_key": "veo_3_1_i2v_s_fast_ultra",  # Use I2V model for image-to-video
             "title": f"{project_name}_scene{scene_idx}",
             "dir_videos": dir_videos,
             "upscale_4k": False,
