@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import base64, requests, time
 from typing import Optional
-from services.core.api_config import gemini_image_endpoint, IMAGE_GEN_TIMEOUT
+from services.core.api_config import gemini_image_endpoint, IMAGE_GEN_TIMEOUT, VERTEX_AI_IMAGE_MODEL
 from services.core.key_manager import get_all_keys, refresh
 from services.core.api_key_rotator import APIKeyRotator, APIKeyRotationError
 
@@ -75,8 +75,8 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
         # Vertex AI is enabled, now try to import required modules
         try:
             from services.vertex_service_account_manager import get_vertex_account_manager
-            import vertexai
-            from vertexai.preview.vision_models import ImageGenerationModel
+            from google import genai
+            from google.genai import types
             
             account_mgr = get_vertex_account_manager()
             account_mgr.load_from_config(config)
@@ -105,73 +105,56 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
             
             try:
-                # Initialize Vertex AI
-                vertexai.init(project=account.project_id, location=account.location)
+                # Initialize Vertex AI client using google-genai SDK
+                log(f"[IMAGE GEN] Khởi tạo Vertex AI client với Gemini model...")
                 
-                # Map aspect ratio to Vertex AI format
-                vertex_aspect_ratio = "1:1"  # default
-                if aspect_ratio == "9:16":
-                    vertex_aspect_ratio = "9:16"
-                elif aspect_ratio == "16:9":
-                    vertex_aspect_ratio = "16:9"
-                elif aspect_ratio == "4:5":
-                    vertex_aspect_ratio = "3:4"  # Closest supported
-                elif aspect_ratio == "3:4":
-                    vertex_aspect_ratio = "3:4"
+                client = genai.Client(
+                    vertexai=True,
+                    project=account.project_id,
+                    location=account.location
+                )
                 
-                log(f"[IMAGE GEN] Gọi Vertex AI Imagen với aspect ratio {vertex_aspect_ratio}...")
+                # Use configured Vertex AI image model (gemini-2.5-flash)
+                model_name = VERTEX_AI_IMAGE_MODEL
                 
-                # Load the image generation model
-                model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+                log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")
                 
-                # Generate image using Vertex AI
-                response = model.generate_images(
-                    prompt=prompt,
-                    number_of_images=1,
-                    aspect_ratio=vertex_aspect_ratio,
-                    safety_filter_level="block_some",
-                    person_generation="allow_adult"
+                # Add aspect ratio hint to prompt for better results
+                aspect_hint = ""
+                if aspect_ratio and aspect_ratio != "1:1":
+                    if aspect_ratio in ("9:16", "4:5", "3:4"):
+                        aspect_hint = " (portrait orientation, vertical format)"
+                    elif aspect_ratio in ("16:9", "21:9"):
+                        aspect_hint = " (landscape orientation, horizontal format)"
+                
+                enhanced_prompt = prompt + aspect_hint if aspect_hint else prompt
+                
+                # Generate image using Gemini model
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=enhanced_prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.9,
+                        top_k=40,
+                        top_p=0.95,
+                    )
                 )
                 
                 # Extract image bytes from response
-                if response.images and len(response.images) > 0:
-                    generated_image = response.images[0]
-                    
-                    # Get image data - try multiple approaches
-                    try:
-                        # Approach 1: Direct _image_bytes access
-                        if hasattr(generated_image, '_image_bytes'):
-                            image_bytes = generated_image._image_bytes
-                            log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
-                            return image_bytes
-                    except Exception:
-                        pass
-                    
-                    try:
-                        # Approach 2: PIL Image conversion
-                        if hasattr(generated_image, '_pil_image'):
-                            from io import BytesIO
-                            buffer = BytesIO()
-                            generated_image._pil_image.save(buffer, format='PNG')
-                            image_bytes = buffer.getvalue()
-                            log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
-                            return image_bytes
-                    except Exception:
-                        pass
-                    
-                    try:
-                        # Approach 3: Save to temp file and read back
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                            tmp_path = tmp.name
-                        generated_image.save(tmp_path)
-                        with open(tmp_path, 'rb') as f:
-                            image_bytes = f.read()
-                        os.unlink(tmp_path)
-                        log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
-                        return image_bytes
-                    except Exception as e:
-                        log(f"[IMAGE GEN] Lỗi khi lưu/đọc ảnh: {e}")
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                        parts = candidate.content.parts
+                        for part in parts:
+                            # Look for inline_data with image
+                            if hasattr(part, 'inline_data'):
+                                mime_type = part.inline_data.mime_type
+                                if mime_type and mime_type.startswith('image/'):
+                                    # Decode base64 image data
+                                    import base64
+                                    image_bytes = base64.b64decode(part.inline_data.data)
+                                    log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với Gemini ({len(image_bytes)} bytes)")
+                                    return image_bytes
                 
                 log("[IMAGE GEN] Vertex AI không trả về ảnh")
                 return None
@@ -186,7 +169,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                 
         except ImportError as ie:
             log(f"[IMAGE GEN] Vertex AI được bật nhưng thiếu dependencies: {ie}")
-            log("[IMAGE GEN] Chạy: pip install google-cloud-aiplatform")
+            log("[IMAGE GEN] Chạy: pip install google-genai>=0.3.0")
             return None
         except Exception as e:
             log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
