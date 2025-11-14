@@ -801,15 +801,26 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
     # ===== CHECK FOR CUSTOM SYSTEM PROMPT =====
     # Check if custom system prompt exists for this domain+topic
     custom_prompt = None
+    requires_no_characters = False
     if domain and topic:
         try:
             from services.domain_custom_prompts import get_custom_prompt
             custom_prompt = get_custom_prompt(domain, topic)
             if custom_prompt:
                 print(f"[INFO] Using CUSTOM system prompt for {domain}/{topic}")
+
+                # Detect no-character requirement from custom prompt CONTENT
+                custom_lower = custom_prompt.lower()
+                requires_no_characters = (
+                    "no character" in custom_lower or
+                    "không tạo nhân vật" in custom_lower or
+                    "cấm tạo nhân vật" in custom_lower or
+                    "character_bible = []" in custom_prompt or
+                    "character_bible=[]" in custom_prompt.replace(" ", "")
+                )
         except ImportError:
             print(f"[WARN] Could not load custom prompts module")
-    
+
     # If custom prompt exists, use simplified prompt structure
     if custom_prompt:
         # Build minimal prompt with ONLY custom prompt + language + schema
