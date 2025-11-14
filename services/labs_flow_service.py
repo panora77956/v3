@@ -1235,15 +1235,14 @@ class LabsClient:
                 
                 # Add prompt - different field for I2V vs T2V
                 if mid_val:
-                    # Image-to-video: use imageInput
-                    # NOTE: API field name has changed multiple times:
-                    # - Originally: "imageInput"
-                    # - Changed to: "startImageInput" (Nov 2024)
-                    # - Changed back to: "imageInput" (Nov 2024)
-                    request_item["imageInput"] = {
-                        "startImage": {"mediaId": mid_val},
-                        "prompt": prompt
-                    }
+                    # Image-to-video: use startImage + textInput as siblings
+                    # NOTE: API structure evolution:
+                    # - Originally: nested in "imageInput" wrapper
+                    # - Changed to: "startImageInput" wrapper (Nov 2024)
+                    # - Changed back to: "imageInput" wrapper (Nov 2024)
+                    # - Current (Nov 14, 2024): flat structure - startImage and textInput as siblings
+                    request_item["startImage"] = {"mediaId": mid_val}
+                    request_item["textInput"] = {"prompt": prompt}
                 else:
                     # Text-to-video: use textInput
                     request_item["textInput"] = {"prompt": prompt}
