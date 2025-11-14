@@ -1753,7 +1753,7 @@ def _validate_dialogue_language(scenes, target_lang):
 
     return True, None
 
-def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, duration, previous_scenes, character_bible, outline, provider, api_key, progress_callback):
+def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, duration, previous_scenes, character_bible, outline, provider, api_key, progress_callback, domain=None, topic=None):
     """
     Generate a single scene with context from previous scenes.
     
@@ -1770,6 +1770,8 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
         provider: LLM provider
         api_key: API key
         progress_callback: Progress callback function
+        domain: Optional domain for custom prompt handling
+        topic: Optional topic for custom prompt handling
         
     Returns:
         Dict with scene data
@@ -1780,6 +1782,12 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
     
     target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
     
+    # Check if domain requires no-character narration
+    no_character_domains = [
+        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
+    ]
+    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
+    
     # Build context from previous scenes
     context = ""
     if previous_scenes:
@@ -1788,15 +1796,16 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
             context += f"\nScene {i}:\n"
             context += f"- Location: {prev.get('location', 'N/A')}\n"
             context += f"- Time: {prev.get('time_of_day', 'N/A')}\n"
-            context += f"- Characters: {', '.join(prev.get('characters', []))}\n"
+            if not requires_no_characters:
+                context += f"- Characters: {', '.join(prev.get('characters', []))}\n"
             context += f"- Emotion: {prev.get('emotion', 'N/A')}\n"
             context += f"- Story Beat: {prev.get('story_beat', 'N/A')}\n"
             if 'prompt_vi' in prev:
                 context += f"- Visual: {prev['prompt_vi'][:150]}...\n"
     
-    # Build character context
+    # Build character context (skip for no-character domains)
     char_context = ""
-    if character_bible:
+    if character_bible and not requires_no_characters:
         char_context = "\n**CHARACTER BIBLE (maintain consistency):**\n"
         for char in character_bible:
             char_context += f"\n{char.get('name', 'Unknown')}:\n"
@@ -1817,7 +1826,58 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
     # Get style guidance
     style_guidance = _get_style_specific_guidance(style, idea=idea)
     
-    prompt = f"""You are an expert screenplay writer. Generate Scene {scene_num} of {total_scenes} for a video.
+    # Build prompt based on domain requirements
+    if requires_no_characters:
+        # No-character scene prompt (PANORA and similar)
+        prompt = f"""You are a science education content creator. Generate Scene {scene_num} of {total_scenes} for a video.
+
+**STORY POSITION**: {story_position}
+
+**ORIGINAL IDEA**: {idea}
+
+**STYLE**: {style}
+{style_guidance}
+
+**TARGET LANGUAGE**: {target_language}
+- ALL text_tgt, prompt_tgt, voiceover_tgt fields MUST be in {target_language}
+
+**STORY OUTLINE**: {outline if outline else "Develop naturally based on idea"}
+
+{context}
+
+**SCENE {scene_num} REQUIREMENTS**:
+- Duration: {duration} seconds
+- Connect logically to previous scene (location, time, visual continuity)
+- Clear emotion and story beat
+- Scientific/medical visual elements (3D simulations, holograms, data overlays)
+- Second-person voiceover addressing audience ("Bạn", "Cơ thể của bạn", "Não của bạn")
+
+**CRITICAL**: NO character names, NO fictional personas, NO dialogue between characters
+
+Return ONLY valid JSON (no extra text):
+
+{{
+  "prompt_vi": "Mô tả hình ảnh y khoa/khoa học bằng tiếng Việt - KHÔNG có tên nhân vật",
+  "prompt_tgt": "Scientific/medical visual description in {target_language} - NO character names",
+  "duration": {duration},
+  "voiceover_vi": "Lời thoại ngôi thứ hai bằng tiếng Việt (Bạn, Cơ thể của bạn)",
+  "voiceover_tgt": "Second-person narration in {target_language}",
+  "location": "Specific scientific/medical location",
+  "time_of_day": "Day/Night (if relevant)",
+  "camera_shot": "Wide/Close-up/Tracking (focusing on scientific elements)",
+  "lighting_mood": "Bright/Dark/Clinical (appropriate for medical/scientific content)",
+  "emotion": "Primary emotion of this scene",
+  "story_beat": "Setup/Rising action/Twist/Climax/Resolution",
+  "transition_from_previous": "How this connects to previous scene",
+  "style_notes": "Specific {style} style elements",
+  "visual_elements": ["List of visual elements: hologram, 3D simulation, data overlay, etc."],
+  "visual_notes": "Props, colors, scientific accuracy, data overlays"
+}}
+
+CRITICAL: Use second-person voiceover only, NO character names or fictional personas."""
+    else:
+        # Standard character-based scene prompt
+        prompt = f"""You are an expert screenplay writer. Generate Scene {scene_num} of {total_scenes} for a video.
 
 **STORY POSITION**: {story_position}
 
@@ -1920,10 +1980,60 @@ def generate_script_scene_by_scene(idea, style, duration_seconds, provider='Gemi
     
     report_progress(f"Tính toán: {n} cảnh cần tạo (total {duration_seconds}s)", 10)
     
+    # Check if domain requires no-character narration (like PANORA)
+    no_character_domains = [
+        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
+    ]
+    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
+    
+    # Check if custom prompt exists
+    custom_prompt = None
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            custom_prompt = get_custom_prompt(domain, topic)
+            if custom_prompt:
+                print(f"[INFO] Scene-by-scene using custom prompt for {domain}/{topic}")
+        except ImportError:
+            pass
+    
     # Step 1: Generate metadata (title, character bible, outline)
     report_progress("Đang tạo metadata (title, character bible, outline)...", 15)
     
-    metadata_prompt = f"""You are an expert screenplay writer. Create metadata for a {duration_seconds}s video.
+    # Build metadata prompt based on domain requirements
+    if requires_no_characters:
+        # No-character metadata prompt (PANORA and similar)
+        system_instruction = custom_prompt if custom_prompt else "You are a science education content creator."
+        metadata_prompt = f"""{system_instruction}
+
+Create metadata for a {duration_seconds}s video.
+
+**IDEA**: {idea}
+**STYLE**: {style}
+**MODE**: {mode} ({n} scenes)
+**TARGET LANGUAGE**: {target_language}
+
+**CRITICAL**: NO character names, NO fictional personas. Use second-person narration addressing the audience.
+
+Generate ONLY valid JSON (no extra text):
+
+{{
+  "title_vi": "Tiêu đề hấp dẫn (Vietnamese)",
+  "title_tgt": "Title in {target_language}",
+  "hook_summary": "What makes viewer watch first 3s?",
+  "character_bible": [],
+  "character_bible_tgt": [],
+  "outline_vi": "Dàn ý theo 5 giai đoạn: VẤN ĐỀ → PHẢN ỨNG → LEO THANG → ĐIỂM GIỚI HẠN → TOÀN CẢNH",
+  "outline_tgt": "5-stage outline in {target_language}",
+  "screenplay_vi": "Screenplay với VOICEOVER ngôi thứ hai (Bạn, Cơ thể của bạn) và VISUAL DESCRIPTION (3D/2D y tế, hologram)",
+  "screenplay_tgt": "Screenplay in {target_language} with second-person voiceover",
+  "emotional_arc": "Emotional journey: [Start] → [Peaks & Valleys] → [End]"
+}}
+
+NO character names. Focus on scientific/medical visuals and second-person narration."""
+    else:
+        # Standard character-based metadata prompt
+        metadata_prompt = f"""You are an expert screenplay writer. Create metadata for a {duration_seconds}s video.
 
 **IDEA**: {idea}
 **STYLE**: {style}
@@ -2010,7 +2120,9 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
                 outline=outline,
                 provider=provider,
                 api_key=api_key,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                domain=domain,
+                topic=topic
             )
             
             # Ensure duration is set correctly
@@ -2035,7 +2147,9 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
                     outline=outline,
                     provider=provider,
                     api_key=api_key,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    domain=domain,
+                    topic=topic
                 )
                 scene["duration"] = int(per[scene_num - 1])
                 scenes.append(scene)
@@ -2121,26 +2235,42 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
     # Build base prompt
     prompt=_schema_prompt(idea=idea, style_vi=style, out_lang=output_lang, n=n, per=per, mode=mode, topic=topic, domain=domain)
 
-    # Prepend expert intro if domain/topic selected
+    # Prepend expert intro if domain/topic selected AND no custom prompt exists
+    # Custom prompts (from domain_custom_prompts.py) already contain full system instructions
+    # Adding expert_intro would duplicate/conflict with custom prompts
     if domain and topic:
-        report_progress(f"Đang thêm chuyên môn {domain}...", 15)
+        # Check if custom prompt exists for this domain/topic
+        has_custom_prompt = False
         try:
-            from services.domain_prompts import build_expert_intro
-            # Map language code to vi/en for domain prompts
-            prompt_lang = "vi" if output_lang == "vi" else "en"
+            from services.domain_custom_prompts import get_custom_prompt
+            custom_prompt = get_custom_prompt(domain, topic)
+            has_custom_prompt = custom_prompt is not None
+        except ImportError:
+            pass  # No custom prompts module, proceed with expert intro
+        
+        # Only add expert intro if NO custom prompt exists
+        if not has_custom_prompt:
+            report_progress(f"Đang thêm chuyên môn {domain}...", 15)
+            try:
+                from services.domain_prompts import build_expert_intro
+                # Map language code to vi/en for domain prompts
+                prompt_lang = "vi" if output_lang == "vi" else "en"
 
-            # OPTIMIZATION: Use cached domain prompt if available
-            cache_key = f"{domain}|{topic}|{prompt_lang}"
-            if cache_key in _domain_prompt_cache:
-                expert_intro = _domain_prompt_cache[cache_key]
-            else:
-                expert_intro = build_expert_intro(domain, topic, prompt_lang)
-                _domain_prompt_cache[cache_key] = expert_intro
+                # OPTIMIZATION: Use cached domain prompt if available
+                cache_key = f"{domain}|{topic}|{prompt_lang}"
+                if cache_key in _domain_prompt_cache:
+                    expert_intro = _domain_prompt_cache[cache_key]
+                else:
+                    expert_intro = build_expert_intro(domain, topic, prompt_lang)
+                    _domain_prompt_cache[cache_key] = expert_intro
 
-            prompt = f"{expert_intro}\n\n{prompt}"
-        except Exception as e:
-            # Log but don't fail if domain prompt loading fails
-            print(f"[WARN] Could not load domain prompt: {e}")
+                prompt = f"{expert_intro}\n\n{prompt}"
+            except Exception as e:
+                # Log but don't fail if domain prompt loading fails
+                print(f"[WARN] Could not load domain prompt: {e}")
+        else:
+            # Custom prompt is already included in _schema_prompt, no need to add expert intro
+            print(f"[INFO] Using custom prompt for {domain}/{topic}, skipping expert intro")
 
     # Call LLM
     if provider.lower().startswith("gemini"):
