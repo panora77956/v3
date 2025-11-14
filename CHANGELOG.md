@@ -2,9 +2,31 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
+## [7.3.1] - 2025-11-14
+
+### Fixed - Image2Video API Field Name Reversion
+- **Critical Fix**: Resolved Image2Video HTTP 400 "Unknown name 'startImageInput'" error
+- **Root Cause**: Google Labs API changed field name BACK from `startImageInput` to `imageInput`
+- **API Change History**:
+  - Originally used `imageInput` 
+  - Changed to `startImageInput` (PR #81, earlier today)
+  - Changed BACK to `imageInput` (this fix)
+- **Solution**: Reverted field name from `startImageInput` back to `imageInput`
+- **Impact**: 
+  - Image-to-video generation should work correctly again
+  - Demonstrates API instability - field names changing multiple times in one day
+  - Upload endpoint unchanged (always used `imageInput` correctly)
+  - Text-to-video unchanged (uses `textInput`, not affected)
+- **Files Changed**: 
+  - `services/labs_flow_service.py` (line 1232)
+  - `services/google/labs_flow_client.py` (line 861)
+- **Documentation**: Added `docs/API_FIELD_NAME_REVERSION_FIX.md` with detailed history
+- **Testing**: ✅ Syntax validation, imports, and security scan (CodeQL: 0 alerts) passed
+- **Note**: Google Labs API appears highly volatile - expect potential future changes
+
 ## [7.3.0] - 2025-11-14
 
-### Fixed - Image2Video API 400 Error
+### Fixed - Image2Video API 400 Error (SUPERSEDED by 7.3.1)
 - **Critical Fix**: Resolved Image2Video tab HTTP 400 "Unknown name 'imageInput'" error
 - **Root Cause**: Google Labs API changed field name from `imageInput` to `startImageInput` for video generation
 - **Solution**: Updated field name in video generation requests to match API endpoint naming pattern
@@ -20,7 +42,7 @@ All notable changes to Video Super Ultra v3 are documented here.
   - `services/google/labs_flow_client.py` (line 854)
 - **Documentation**: Added `docs/IMAGE2VIDEO_API_FIX.md` with detailed analysis
 - **Testing**: ✅ Syntax validation, imports, and security scan (CodeQL: 0 alerts) passed
-- **Note**: Upload endpoint still uses `imageInput` correctly (different endpoint, different schema)
+- **Note**: This fix was superseded by version 7.3.1 which reverted the change
 
 ## [7.2.9] - 2025-11-10
 
