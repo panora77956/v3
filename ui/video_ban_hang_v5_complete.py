@@ -246,9 +246,9 @@ class ImageGenerationWorker(QThread):
                         self.progress.emit(f"Cảnh {scene.get('index')}: Dùng {model_name}...")
 
                         # Enhanced: Respect rate limit for subsequent requests
-                        # Pass reference images if using Whisk
+                        # Pass reference images for product consistency (works for both Whisk and Gemini/Vertex AI)
                         reference_images = None
-                        if model == 'whisk' and self.model_paths and self.prod_paths:
+                        if self.model_paths and self.prod_paths:
                             reference_images = []
                             if self.model_paths:
                                 reference_images.extend(self.model_paths)
@@ -477,9 +477,9 @@ class ImageGenerationWorker(QThread):
                     try:
                         # Import in thread scope to ensure it's available
                         if image_gen_service:
-                            # Pass reference images if using Whisk
+                            # Pass reference images for product consistency (works for both Whisk and Gemini/Vertex AI)
                             reference_images = None
-                            if model == 'whisk' and self.model_paths and self.prod_paths:
+                            if self.model_paths and self.prod_paths:
                                 reference_images = []
                                 if self.model_paths:
                                     reference_images.extend(self.model_paths)
@@ -534,9 +534,9 @@ class ImageGenerationWorker(QThread):
 
                 try:
                     if image_gen_service:
-                        # Pass reference images if using Whisk
+                        # Pass reference images for product consistency (works for both Whisk and Gemini/Vertex AI)
                         reference_images = None
-                        if model == 'whisk' and self.model_paths and self.prod_paths:
+                        if self.model_paths and self.prod_paths:
                             reference_images = []
                             if self.model_paths:
                                 reference_images.extend(self.model_paths)
