@@ -375,6 +375,13 @@ def _repair_json(json_str: str) -> str:
         # Add closing quote if odd number of quotes
         if open_quotes == 1:
             json_str += '"'
+            
+        # If we just added a closing quote and there are unclosed objects,
+        # we may need a comma before closing
+        # Check if the last character before the quote suggests we need a comma
+        if open_quotes == 1 and (open_braces > 0 or open_brackets > 0):
+            # Look at what comes before - if it's a value, we might need structure
+            pass  # The closing will handle it
         
         # Add closing brackets/braces
         json_str += ']' * open_brackets
