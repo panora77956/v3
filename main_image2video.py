@@ -354,23 +354,23 @@ class MainWindow(QTabWidget):
         print("🔄 RELOADING PROMPTS IN ALL TABS")
         print("=" * 70)
         
-        # Reload prompts in Text2Video panel
-        if hasattr(self, 'text2video') and hasattr(self.text2video, 'reload_prompts'):
-            try:
-                self.text2video.reload_prompts()
-                print("✓ Text2Video: Prompts reloaded successfully")
-            except Exception as e:
-                print(f"❌ Text2Video: Failed to reload prompts - {e}")
+        # List of panels that support prompt reloading
+        panels_to_reload = [
+            ('Text2Video', 'text2video'),
+            ('Video Ads', 'video_ads'),
+        ]
         
-        # Reload prompts in Video Ads panel (if it has the method)
-        if hasattr(self, 'video_ads') and hasattr(self.video_ads, 'reload_prompts'):
-            try:
-                self.video_ads.reload_prompts()
-                print("✓ Video Ads: Prompts reloaded successfully")
-            except Exception as e:
-                print(f"❌ Video Ads: Failed to reload prompts - {e}")
-        
-        # Add more panels here as needed
+        for panel_name, panel_attr in panels_to_reload:
+            if hasattr(self, panel_attr):
+                panel = getattr(self, panel_attr)
+                if hasattr(panel, 'reload_prompts'):
+                    try:
+                        panel.reload_prompts()
+                        print(f"✓ {panel_name}: Prompts reloaded successfully")
+                    except Exception as e:
+                        print(f"❌ {panel_name}: Failed to reload prompts - {e}")
+                        import traceback
+                        traceback.print_exc()
         
         print("=" * 70 + "\n")
 
