@@ -475,7 +475,7 @@ def _build_image_prompt(struct:Dict[str,Any], visualStyleString:str)->str:
     setting = (struct or {}).get("setting_details","")
     character = (struct or {}).get("character_details","")
     action = (struct or {}).get("key_action","")
-    return f"""Objective: Generate ONE SINGLE photorealistic, high-quality preview image for a video scene, meticulously following all instructions. The output MUST be a single, unified image.
+    return f"""Objective: Generate ONE SINGLE photorealistic, high-quality preview image for a video scene, meticulously following all instructions. The output MUST be a single, unified image with anatomically correct subjects.
 
 --- SCENE COMPOSITION ---
 - Overall Style: {visualStyleString}.
@@ -488,11 +488,18 @@ def _build_image_prompt(struct:Dict[str,Any], visualStyleString:str)->str:
 1. SINGLE IMAGE OUTPUT (CRITICAL): The output MUST be ONE single, coherent image. NO collages, grids, split-screens, or multi-panel images are allowed under any circumstances.
 2. CHARACTER FIDELITY: The character's clothing, hairstyle, and gender MUST PERFECTLY and EXACTLY match the description provided in the scene composition. This OVERRIDES ALL other instructions.
 3. NO TEXT OR WATERMARKS: The image MUST be 100% free of any text, letters, words, subtitles, captions, logos, watermarks, or any form of typography.
+4. ANATOMICAL CORRECTNESS: All human subjects MUST have correct anatomy - exactly 2 arms, 2 legs, 5 fingers per hand, realistic proportions. NO extra limbs, floating body parts, or distorted anatomy.
+5. REALISTIC PHYSICS: All objects MUST obey gravity and physics. NO floating objects, levitating products, or unrealistic hovering elements.
+6. CLEAN COMPOSITION: Products and props MUST be properly placed on surfaces or held naturally. NO random clutter or excessive background elements.
 
 --- NEGATIVE PROMPT (Elements to strictly AVOID) ---
 - collage, grid, multiple panels, multi-panel, split screen, diptych, triptych, multiple frames.
-- text, words, letters, logos, watermarks, typography, signatures, labels, captions, subtitles.
+- text, words, letters, logos, watermarks, typography, signatures, labels, captions, subtitles, Vietnamese text, English text, Chinese text, Japanese text, Korean text, any language text.
 - cartoon, illustration, drawing, sketch, anime, 3d render.
+- extra limbs, extra arms, extra legs, extra fingers, floating hands, floating feet, floating limbs, detached body parts, malformed hands, malformed feet, missing fingers, extra fingers, distorted anatomy, deformed limbs.
+- floating objects, levitating products, hovering items, unrealistic placement, defying gravity.
+- cluttered background, messy composition, excessive props, random objects, unnecessary elements.
+- distorted faces, asymmetric eyes, misaligned features, unrealistic expressions.
 """.strip()
 
 def _build_social_media_prompt(cfg: Dict[str, Any], outline_vi: str) -> str:

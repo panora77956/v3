@@ -833,6 +833,23 @@ class LabsFlowClient:
                       truncated_length=len(prompt),
                       max_allowed=MAX_PROMPT_LENGTH)
         
+        # ═══════════════════════════════════════════════════════════════
+        # PROMPT SANITIZATION: Remove invalid characters that could cause 400 errors
+        # ═══════════════════════════════════════════════════════════════
+        # Remove null bytes and other control characters that can break JSON
+        prompt = prompt.replace('\x00', '').replace('\r', '\n')
+        # Replace multiple newlines with double newline for cleaner formatting
+        import re
+        prompt = re.sub(r'\n{3,}', '\n\n', prompt)
+        # Strip leading/trailing whitespace
+        prompt = prompt.strip()
+        
+        # Validate prompt is not empty after sanitization
+        if not prompt or len(prompt) < 10:
+            self._emit("prompt_validation_error", 
+                      error="Prompt is empty or too short after sanitization")
+            raise ValueError("Prompt must be at least 10 characters after sanitization")
+        
         # Extract negative prompt
         negative_prompt = _extract_negative_prompt(original_prompt_data)
 
@@ -844,13 +861,31 @@ class LabsFlowClient:
             for k in range(copies_n):
                 seed = base_seed + k if copies_n > 1 else base_seed
                 
+                # Validate seed is a reasonable positive integer
+                if seed < 0:
+                    seed = abs(seed)
+                # Ensure seed doesn't overflow (keep it within 32-bit range)
+                if seed > 2147483647:
+                    seed = seed % 2147483647
+                
                 # Generate unique sceneId for each request
                 # CRITICAL: This sceneId must be included when checking generation status
                 scene_id = str(uuid.uuid4())
                 scene_ids.append(scene_id)
                 
+                # Validate aspect ratio format
+                valid_aspects = ["VIDEO_ASPECT_RATIO_PORTRAIT", "VIDEO_ASPECT_RATIO_LANDSCAPE", "VIDEO_ASPECT_RATIO_SQUARE"]
+                if aspect_ratio not in valid_aspects:
+                    # Default to portrait if invalid
+                    aspect_ratio_validated = "VIDEO_ASPECT_RATIO_PORTRAIT"
+                    self._emit("aspect_ratio_corrected", 
+                              original=aspect_ratio, 
+                              corrected=aspect_ratio_validated)
+                else:
+                    aspect_ratio_validated = aspect_ratio
+                
                 request_item = {
-                    "aspectRatio": aspect_ratio,
+                    "aspectRatio": aspect_ratio_validated,
                     "seed": seed,
                     "videoModelKey": use_model,
                     "metadata": {"sceneId": scene_id}
@@ -864,7 +899,14 @@ class LabsFlowClient:
                     # - Changed to: "startImageInput" wrapper (Nov 2024)
                     # - Changed back to: "imageInput" wrapper (Nov 2024)
                     # - Current (Nov 14, 2024): flat structure - startImage and textInput as siblings
-                    request_item["startImage"] = {"mediaId": mid_val}
+                    
+                    # Validate mediaId is not empty
+                    if not mid_val or not isinstance(mid_val, str) or len(mid_val.strip()) == 0:
+                        self._emit("validation_error", 
+                                  error=f"Invalid mediaId for I2V: '{mid_val}'")
+                        raise ValueError(f"Invalid mediaId for image-to-video generation: '{mid_val}'")
+                    
+                    request_item["startImage"] = {"mediaId": mid_val.strip()}
                     request_item["textInput"] = {"prompt": prompt}
                 else:
                     # Text-to-video: use textInput
