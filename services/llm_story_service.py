@@ -1926,6 +1926,123 @@ def _validate_dialogue_language(scenes, target_lang):
 
     return True, None
 
+
+def _validate_no_characters(script_data, domain=None, topic=None):
+    """
+    Validate that no-character domains (like PANORA) don't have character names.
+    
+    This checks for:
+    - Non-empty character_bible/character_bible_tgt arrays
+    - Character names in any text fields (prompts, voiceovers, outline, screenplay)
+    - Common character name patterns (proper names, titles like "Dr.", "Tiến sĩ")
+    
+    Args:
+        script_data: Script data dictionary
+        domain: Optional domain name
+        topic: Optional topic name
+    
+    Returns:
+        tuple: (is_valid: bool, warning_message: str or None)
+    """
+    # Check if this is a no-character domain
+    no_character_domains = [
+        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
+    ]
+    
+    if not domain or not topic or (domain, topic) not in no_character_domains:
+        # Not a no-character domain, skip validation
+        return True, None
+    
+    issues = []
+    
+    # Check 1: character_bible should be empty
+    char_bible = script_data.get("character_bible", [])
+    char_bible_tgt = script_data.get("character_bible_tgt", [])
+    
+    if char_bible:
+        issues.append(f"character_bible not empty: {len(char_bible)} characters found")
+        # List character names for debugging
+        for char in char_bible[:3]:
+            char_name = char.get("name", "Unknown")
+            issues.append(f"  - Character: {char_name}")
+    
+    if char_bible_tgt:
+        issues.append(f"character_bible_tgt not empty: {len(char_bible_tgt)} characters found")
+    
+    # Check 2: Look for common character name patterns
+    # Common Vietnamese first names and titles
+    forbidden_patterns = [
+        # Vietnamese names (common first names)
+        r'\b(Anya|Liam|Kai|Mai|Minh|Hoa|Lan|Linh|Nam|Anh|Tuấn|Dũng|Hùng)\b',
+        # Titles
+        r'\b(Dr\.|Tiến sĩ|Bác sĩ|Y tá|Nhà khoa học|Chuyên gia)\b',
+        # English names
+        r'\b(Sharma|Chen|Smith|Johnson|Williams|Brown)\b',
+        # Character descriptors
+        r'\b(nhà khoa học|bệnh nhân|tình nguyện viên|đối tượng thử nghiệm|người phụ nữ|người đàn ông)\b',
+        # Appearance descriptions (should not appear)
+        r'\b(áo blouse|tóc đen|kính gọng|quần áo|giày dép)\b',
+        # ACT structure patterns (should not appear)
+        r'\b(ACT I|ACT II|ACT III|Scene \d+|Ngày \d+|Giai đoạn \d+)\b',
+    ]
+    
+    # Fields to check
+    fields_to_check = [
+        ("title_vi", script_data.get("title_vi", "")),
+        ("title_tgt", script_data.get("title_tgt", "")),
+        ("outline_vi", script_data.get("outline_vi", "")),
+        ("outline_tgt", script_data.get("outline_tgt", "")),
+        ("screenplay_vi", script_data.get("screenplay_vi", "")),
+        ("screenplay_tgt", script_data.get("screenplay_tgt", "")),
+    ]
+    
+    # Check scenes
+    scenes = script_data.get("scenes", [])
+    for scene_idx, scene in enumerate(scenes, 1):
+        fields_to_check.extend([
+            (f"Scene {scene_idx} prompt_vi", scene.get("prompt_vi", "")),
+            (f"Scene {scene_idx} prompt_tgt", scene.get("prompt_tgt", "")),
+            (f"Scene {scene_idx} voiceover_vi", scene.get("voiceover_vi", "")),
+            (f"Scene {scene_idx} voiceover_tgt", scene.get("voiceover_tgt", "")),
+        ])
+    
+    # Check for forbidden patterns
+    import re
+    for field_name, field_value in fields_to_check:
+        if not field_value:
+            continue
+        
+        for pattern in forbidden_patterns:
+            matches = re.findall(pattern, field_value, re.IGNORECASE)
+            if matches:
+                # Get first 3 unique matches
+                unique_matches = list(set(matches))[:3]
+                issues.append(f"{field_name}: Found forbidden patterns: {', '.join(unique_matches)}")
+    
+    if issues:
+        warning = (
+            f"⚠️ LỖI NGHIÊM TRỌNG: PANORA script KHÔNG ĐƯỢC chứa nhân vật!\n\n"
+            f"Domain: {domain} / Topic: {topic}\n"
+            f"Đã phát hiện {len(issues)} vi phạm:\n\n" +
+            "\n".join(f"- {issue}" for issue in issues[:10])  # Show first 10
+        )
+        if len(issues) > 10:
+            warning += f"\n... và {len(issues) - 10} vi phạm khác"
+        
+        warning += "\n\n" + """
+PANORA RULES REMINDER:
+✓ PHẢI dùng ngôi thứ hai: "Bạn", "Cơ thể của bạn", "Não của bạn"
+✓ PHẢI mô tả hình ảnh y khoa: hologram 3D, medical scan, data overlay
+✗ KHÔNG tạo nhân vật với tên riêng
+✗ KHÔNG mô tả ngoại hình người (tóc, quần áo, kính)
+✗ KHÔNG dùng ACT I/II/III structure
+✗ PHẢI dùng 5 giai đoạn: VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH
+"""
+        
+        return False, warning
+    
+    return True, None
+
 def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, duration, previous_scenes, character_bible, outline, provider, api_key, progress_callback, domain=None, topic=None):
     """
     Generate a single scene with context from previous scenes.
@@ -2514,18 +2631,26 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
             print(f"[WARN] Scene continuity issues detected: {continuity_issues}")
         return continuity_issues
 
+    def validate_no_chars():
+        no_chars_valid, no_chars_warning = _validate_no_characters(res, domain=domain, topic=topic)
+        if not no_chars_valid and no_chars_warning:
+            print(no_chars_warning)
+        return no_chars_valid, no_chars_warning
+
     # Run all validations in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_duplicates = executor.submit(validate_duplicates)
         future_relevance = executor.submit(validate_relevance)
         future_dialogues = executor.submit(validate_dialogues)
         future_continuity = executor.submit(validate_continuity)
+        future_no_chars = executor.submit(validate_no_chars)
 
         # Wait for all to complete
         duplicates = future_duplicates.result()
         is_relevant, relevance_score, warning_msg = future_relevance.result()
         dialogue_valid, dialogue_warning = future_dialogues.result()
         continuity_issues = future_continuity.result()
+        no_chars_valid, no_chars_warning = future_no_chars.result()
 
     # Store validation results
     if not is_relevant and warning_msg:
@@ -2537,6 +2662,12 @@ def generate_script(idea, style, duration_seconds, provider='Gemini 2.5', api_ke
 
     if continuity_issues:
         res["scene_continuity_warnings"] = continuity_issues
+
+    if not no_chars_valid and no_chars_warning:
+        res["no_characters_warning"] = no_chars_warning
+        # For critical violations in no-character domains, we could raise an error
+        # But for now, just warn the user - they can regenerate if needed
+        print(f"[CRITICAL] No-character validation failed for {domain}/{topic}")
 
     report_progress("Đang tối ưu character consistency...", 80)
 
