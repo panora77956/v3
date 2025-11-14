@@ -336,6 +336,55 @@ def _fix_truncated_json(text: str) -> str:
     
     return result
 
+def _repair_json(json_str: str) -> str:
+    """
+    Attempt to repair common JSON issues from LLM responses.
+    
+    Common fixes:
+    - Add missing closing quotes
+    - Add missing closing brackets/braces
+    - Remove trailing commas
+    - Fix escaped characters
+    - Extract JSON from markdown code blocks
+    
+    Args:
+        json_str: Potentially malformed JSON string
+    
+    Returns:
+        Repaired JSON string
+    """
+    # Remove BOM and leading/trailing whitespace
+    json_str = json_str.strip().lstrip('\ufeff')
+    
+    # If starts with markdown code block, extract JSON
+    if json_str.startswith('```'):
+        # Extract content between ```json and ```
+        match = re.search(r'```(?:json)?\s*\n(.*?)\n```', json_str, re.DOTALL)
+        if match:
+            json_str = match.group(1)
+    
+    # Fix unterminated strings at end of file
+    # If last non-whitespace character is not }, try to close everything
+    json_str_stripped = json_str.rstrip()
+    if json_str_stripped and json_str_stripped[-1] not in ['}', ']']:
+        # Count unclosed braces and brackets
+        open_braces = json_str.count('{') - json_str.count('}')
+        open_brackets = json_str.count('[') - json_str.count(']')
+        open_quotes = json_str.count('"') % 2
+        
+        # Add closing quote if odd number of quotes
+        if open_quotes == 1:
+            json_str += '"'
+        
+        # Add closing brackets/braces
+        json_str += ']' * open_brackets
+        json_str += '}' * open_braces
+    
+    # Remove trailing commas before closing brackets/braces
+    json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+    
+    return json_str
+
 def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str, Any]:
     """
     Robust JSON parser with 6 fallback strategies to handle malformed LLM responses.
@@ -367,12 +416,18 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
         return json.loads(response_text)
     except json.JSONDecodeError as e:
         print(f"[DEBUG] {source} Strategy 1 failed (direct parse): {e}")
-        # Strategy 1b: Try with escape fixes for unterminated strings
+        # Strategy 1b: Try with JSON repair for common LLM issues
+        try:
+            repaired = _repair_json(response_text)
+            return json.loads(repaired)
+        except json.JSONDecodeError as e2:
+            print(f"[DEBUG] {source} Strategy 1b failed (repair attempt): {e2}")
+        # Strategy 1c: Try with escape fixes for unterminated strings
         try:
             escaped = _escape_unescaped_strings(response_text)
             return json.loads(escaped)
-        except json.JSONDecodeError as e2:
-            print(f"[DEBUG] {source} Strategy 1b failed (direct parse with escapes): {e2}")
+        except json.JSONDecodeError as e3:
+            print(f"[DEBUG] {source} Strategy 1c failed (direct parse with escapes): {e3}")
 
     # Strategy 2: Fix truncated JSON (auto-complete unclosed structures)
     try:
@@ -807,6 +862,11 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
             custom_prompt = get_custom_prompt(domain, topic)
             if custom_prompt:
                 print(f"[INFO] Using CUSTOM system prompt for {domain}/{topic}")
+                # Warn if custom prompt is very long (may cause JSON truncation)
+                prompt_length = len(custom_prompt)
+                if prompt_length > 3000:
+                    print(f"[WARN] Custom prompt is very long ({prompt_length} chars). May cause JSON truncation in LLM response.")
+                    print(f"[INFO] JSON repair strategies will be applied automatically if truncation occurs.")
         except ImportError:
             print(f"[WARN] Could not load custom prompts module")
     
@@ -899,6 +959,13 @@ INPUT:
 """
     
     # ===== END CUSTOM PROMPT CHECK =====
+
+    # Determine if this domain/topic requires no characters
+    # (e.g., PANORA Science Narrator uses second-person narration only)
+    requires_no_characters = False
+    if custom_prompt and "no character" in custom_prompt.lower():
+        requires_no_characters = True
+        print(f"[INFO] Domain '{domain}' / Topic '{topic}' requires no-character narration")
 
     # Get style-specific guidance with animal detection
     style_guidance = _get_style_specific_guidance(style_vi, idea=idea, topic=topic)
