@@ -818,39 +818,94 @@ ALL text_tgt, prompt_tgt, title_tgt, outline_tgt, screenplay_tgt, voiceover_tgt 
 """
         
         # Schema for no-character domains (PANORA)
+        # CRITICAL: Emphasize NO CHARACTER rules multiple times to override LLM's default storytelling patterns
         schema = f"""
+═══════════════════════════════════════════════════════════════
+⚠️ CRITICAL RULES - READ CAREFULLY (TUYỆT ĐỐI TUÂN THỦ):
+═══════════════════════════════════════════════════════════════
+
+**ABSOLUTE PROHIBITIONS** (VI PHẠM = LỖI NGHIÊM TRỌNG):
+❌ KHÔNG TẠO NHÂN VẬT HƯ CẤU: Tuyệt đối KHÔNG tạo nhân vật với tên riêng
+   - KHÔNG sử dụng: "Tiến sĩ Anya", "Liam", "Kai", "Dr. Sharma", "bệnh nhân X"
+   - KHÔNG mô tả: "nhà khoa học", "bệnh nhân", "y tá", "người phụ nữ"
+   - KHÔNG có: character_bible, character profiles, character names
+
+❌ KHÔNG CÓ THOẠI GIỮA NHÂN VẬT: KHÔNG có dialogues, conversations, exchanges
+   - KHÔNG có: "Tiến sĩ A nói với B", "Liam trả lời"
+   - CHỈ CÓ: Voiceover trực tiếp với khán giả
+
+❌ KHÔNG MÔ TẢ NGOẠI HÌNH NGƯỜI: KHÔNG mô tả tóc, quần áo, kính mắt
+   - KHÔNG có: "áo blouse trắng", "tóc đen buộc gọn", "kính gọng kim loại"
+   - KHÔNG có: "gương mặt mệt mỏi", "đôi mắt sáng lanh lợi"
+
+❌ KHÔNG DÙNG CẤU TRÚC ACT: KHÔNG có ACT I/II/III, không có scene numbers
+   - KHÔNG có: "ACT I: The Premise", "Scene 1-4"
+   - CHỈ CÓ: 5 giai đoạn (VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH)
+
+✅ BẮT BUỘC PHẢI CÓ:
+✓ Ngôi thứ hai (second-person): "Bạn", "Cơ thể của bạn", "Não của bạn"
+✓ Voiceover narration: Narrator nói trực tiếp với khán giả
+✓ Visual descriptions: Mô tả hình ảnh y khoa 3D/2D (hologram, simulation, scan)
+✓ 5-stage structure: VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH
+
+**EXAMPLES** (Ví dụ đúng/sai):
+❌ SAI: "Tiến sĩ Anya Sharma nhìn vào màn hình máy tính"
+✅ ĐÚNG: "Một hình chiếu hologram 3D của não bộ xuất hiện"
+
+❌ SAI: "Liam cảm thấy mệt mỏi sau 24 giờ"
+✅ ĐÚNG: "Sau 24 giờ không ngủ, cơ thể của bạn bắt đầu phản ứng"
+
+❌ SAI: character_bible: [{{"name": "Anya", "role": "Scientist"}}]
+✅ ĐÚNG: character_bible: []
+
+═══════════════════════════════════════════════════════════════
+
 Return ONLY valid JSON (no extra text):
 
 {{
   "title_vi": "Tiêu đề hấp dẫn",
   "title_tgt": "Title in {target_language}",
-  "hook_summary": "Hook 3 giây đầu",
-  "outline_vi": "Dàn ý theo 5 giai đoạn",
+  "hook_summary": "Hook 3 giây đầu - câu hỏi sốc hoặc tuyên bố báo động",
+  "character_bible": [],
+  "character_bible_tgt": [],
+  "outline_vi": "Dàn ý theo 5 giai đoạn (VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH)",
   "outline_tgt": "Outline in {target_language}",
-  "screenplay_vi": "Screenplay với VOICEOVER ngôi thứ hai và VISUAL DESCRIPTION",
-  "screenplay_tgt": "Screenplay in {target_language}",
-  "emotional_arc": "Cung cảm xúc",
+  "screenplay_vi": "Screenplay với VOICEOVER ngôi thứ hai (Bạn, Cơ thể của bạn, Não của bạn) và VISUAL DESCRIPTION (3D/2D hologram, medical scan, data overlay) - TUYỆT ĐỐI KHÔNG có tên nhân vật hay mô tả người",
+  "screenplay_tgt": "Screenplay in {target_language} with second-person voiceover - NO character names or descriptions",
+  "emotional_arc": "Cung cảm xúc theo 5 giai đoạn",
   "scenes": [
     {{
-      "prompt_vi": "Mô tả hình ảnh y khoa/khoa học - KHÔNG có tên nhân vật",
-      "prompt_tgt": "Visual description in {target_language} - NO character names",
+      "prompt_vi": "Mô tả CHÍNH XÁC hình ảnh y khoa/khoa học - hologram 3D, simulation, data overlay - TUYỆT ĐỐI KHÔNG có tên nhân vật hay mô tả người",
+      "prompt_tgt": "EXACT visual description in {target_language} - 3D hologram, medical simulation, data overlay - ABSOLUTELY NO character names or person descriptions",
       "duration": {per[0] if per else 8},
-      "voiceover_vi": "Lời thoại ngôi thứ hai (Bạn, Cơ thể của bạn)",
-      "voiceover_tgt": "Second-person narration in {target_language}",
-      "location": "Không gian y khoa cụ thể",
-      "time_of_day": "Day/Night",
-      "camera_shot": "Wide/Close-up/etc",
-      "lighting_mood": "Bright/Dark/etc",
-      "emotion": "Cảm xúc",
-      "story_beat": "Setup/Rising/Twist/Climax/Resolution",
-      "transition_from_previous": "Kết nối với cảnh trước",
-      "visual_elements": ["Hologram", "3D simulation", "Data overlay"],
-      "visual_notes": "Props, colors, medical accuracy"
+      "voiceover_vi": "Lời thoại ngôi thứ hai bằng tiếng Việt (Bạn, Cơ thể của bạn, Não của bạn) - nói trực tiếp với khán giả",
+      "voiceover_tgt": "Second-person narration in {target_language} (You, Your body, Your brain) - directly addressing the audience",
+      "location": "Không gian y khoa cụ thể (Medical space description) - KHÔNG có phòng thí nghiệm với người",
+      "time_of_day": "Day/Night (nếu relevant)",
+      "camera_shot": "Wide/Close-up/Zoom into hologram/Pan across data",
+      "lighting_mood": "Clinical white/Dark with cyan glow/High-contrast medical",
+      "emotion": "Cảm xúc khán giả cảm nhận (tension, curiosity, alarm, understanding)",
+      "story_beat": "VẤN ĐỀ/PHẢN ỨNG/LEO THANG/GIỚI HẠN/TOÀN CẢNH",
+      "transition_from_previous": "Kết nối với cảnh trước - visual continuity",
+      "visual_elements": ["3D hologram của cơ quan", "Data overlay số liệu", "Medical scan animation", "Particle effects"],
+      "visual_notes": "Màu sắc (Cyan hologram, Orange warning), Camera movement, Medical accuracy, NO PEOPLE"
     }}
   ]
 }}
 
-CRITICAL: NO character names, use second-person voiceover, {n} scenes total.
+**FINAL VALIDATION CHECKLIST** (Kiểm tra trước khi trả về):
+□ character_bible = [] (EMPTY array)
+□ character_bible_tgt = [] (EMPTY array)
+□ NO proper names in ANY field (Anya, Liam, Dr. X, etc.)
+□ NO person descriptions (áo blouse, tóc đen, kính mắt, etc.)
+□ ALL voiceover uses second-person (Bạn, Cơ thể của bạn, You, Your body)
+□ NO dialogues between characters
+□ ALL visual descriptions focus on medical/scientific elements (hologram, scan, data)
+□ Total scenes = {n}
+
+**IF YOU CREATE ANY CHARACTERS WITH NAMES, THIS RESPONSE WILL BE REJECTED.**
+**IF YOU USE ACT I/II/III STRUCTURE, THIS RESPONSE WILL BE REJECTED.**
+**STRICTLY FOLLOW THE 5-STAGE STRUCTURE SPECIFIED IN THE SYSTEM PROMPT.**
 """
         
         # Return simplified prompt with custom system prompt
