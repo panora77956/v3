@@ -7,7 +7,7 @@ Fits in one screen
 import datetime
 import logging
 
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
@@ -99,6 +99,9 @@ def _label(text):
 
 class SettingsPanelV3Compact(QWidget):
     """Settings Panel V3 - Super Compact"""
+    
+    # Signal emitted when prompts are updated
+    prompts_updated = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1510,6 +1513,8 @@ class SettingsPanelV3Compact(QWidget):
 
             if success:
                 self.lb_prompts_status.setText(f'✅ {message}')
+                # Emit signal to notify other tabs to reload prompts
+                self.prompts_updated.emit()
                 QMessageBox.information(self, 'Success', message)
             else:
                 self.lb_prompts_status.setText(f'❌ {message}')

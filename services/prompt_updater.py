@@ -118,12 +118,13 @@ def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str
         return {}, {}, f"Lỗi không xác định: {str(e)}"
 
 
-def generate_prompts_code(prompts: Dict[str, Dict[str, str]], sheet_url: str = None) -> str:
+def generate_prompts_code(prompts: Dict[str, Dict[str, str]], custom_prompts: Dict[str, Dict[str, str]] = None, sheet_url: str = None) -> str:
     """
     Generate Python code for domain_prompts.py from prompts dictionary
     
     Args:
-        prompts: Nested dict with structure {domain: {topic: system_prompt}}
+        prompts: Nested dict with structure {domain: {topic: system_prompt}} for regular prompts
+        custom_prompts: Nested dict with structure {domain: {topic: system_prompt}} for custom prompts (optional)
         sheet_url: Google Sheets URL for documentation (optional)
     
     Returns:
@@ -133,11 +134,28 @@ def generate_prompts_code(prompts: Dict[str, Dict[str, str]], sheet_url: str = N
     if sheet_url is None:
         sheet_url = DEFAULT_SHEETS_URL
 
+    # Merge custom prompts into regular prompts
+    merged_prompts = {}
+    
+    # First, add all regular prompts
+    for domain, topics in prompts.items():
+        if domain not in merged_prompts:
+            merged_prompts[domain] = {}
+        merged_prompts[domain].update(topics)
+    
+    # Then, add/override with custom prompts
+    if custom_prompts:
+        for domain, topics in custom_prompts.items():
+            if domain not in merged_prompts:
+                merged_prompts[domain] = {}
+            merged_prompts[domain].update(topics)
+
     lines = [
         '# -*- coding: utf-8 -*-',
         '"""',
         'Domain-specific system prompts for video generation',
         f'Auto-generated from Google Sheet: {sheet_url}',
+        'Contains both regular and custom prompts merged together',
         '"""',
         '',
         '# Domain → Topics → System Prompts mapping',
@@ -145,11 +163,11 @@ def generate_prompts_code(prompts: Dict[str, Dict[str, str]], sheet_url: str = N
     ]
 
     # Sort domains for consistent output
-    for domain in sorted(prompts.keys()):
+    for domain in sorted(merged_prompts.keys()):
         lines.append(f'    "{domain}": {{')
 
         # Sort topics within each domain
-        topics = prompts[domain]
+        topics = merged_prompts[domain]
         for topic in sorted(topics.keys()):
             prompt = topics[topic]
             # Escape quotes and backslashes in prompt text
@@ -331,10 +349,10 @@ def update_prompts_file(file_path: str, sheet_url: str = None) -> Tuple[bool, st
     if error:
         return False, error
 
-    # Generate new code for regular prompts
-    new_code = generate_prompts_code(regular_prompts, sheet_url)
+    # Generate new code with merged prompts (regular + custom)
+    new_code = generate_prompts_code(regular_prompts, custom_prompts, sheet_url)
 
-    # Write regular prompts to file
+    # Write merged prompts to file
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_code)
@@ -343,7 +361,7 @@ def update_prompts_file(file_path: str, sheet_url: str = None) -> Tuple[bool, st
         regular_domain_count = len(regular_prompts)
         regular_topic_count = sum(len(topics) for topics in regular_prompts.values())
 
-        # Also update custom prompts file if there are custom prompts
+        # Also update custom prompts file (for backward compatibility with llm_story_service)
         custom_message = ""
         if custom_prompts:
             import os

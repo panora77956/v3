@@ -291,6 +291,11 @@ class MainWindow(QTabWidget):
                 self.video_merge = PlaceholderPanel("Video Merge")
             self.addTab(self.video_merge, "🎞️ Ghép Video")
 
+            # Connect prompts_updated signal from Settings panel to reload prompts in other tabs
+            if hasattr(self.settings, 'prompts_updated'):
+                self.settings.prompts_updated.connect(self._on_prompts_updated)
+                print("✓ Connected prompts_updated signal")
+
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -342,6 +347,32 @@ class MainWindow(QTabWidget):
                     print(f"⚠️ Invalid tab index: {last_tab}, using default")
         except Exception as e:
             print(f"⚠️ Could not load state: {e}")
+
+    def _on_prompts_updated(self):
+        """Handle prompts updated signal - reload prompts in all tabs"""
+        print("\n" + "=" * 70)
+        print("🔄 RELOADING PROMPTS IN ALL TABS")
+        print("=" * 70)
+        
+        # Reload prompts in Text2Video panel
+        if hasattr(self, 'text2video') and hasattr(self.text2video, 'reload_prompts'):
+            try:
+                self.text2video.reload_prompts()
+                print("✓ Text2Video: Prompts reloaded successfully")
+            except Exception as e:
+                print(f"❌ Text2Video: Failed to reload prompts - {e}")
+        
+        # Reload prompts in Video Ads panel (if it has the method)
+        if hasattr(self, 'video_ads') and hasattr(self.video_ads, 'reload_prompts'):
+            try:
+                self.video_ads.reload_prompts()
+                print("✓ Video Ads: Prompts reloaded successfully")
+            except Exception as e:
+                print(f"❌ Video Ads: Failed to reload prompts - {e}")
+        
+        # Add more panels here as needed
+        
+        print("=" * 70 + "\n")
 
     def closeEvent(self, event):
         """Save state when closing"""
