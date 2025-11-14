@@ -193,6 +193,9 @@ class ImageGenerationWorker(QThread):
 
             # Generate scene images
             scenes = self.outline.get("scenes", [])
+            social_media = self.outline.get("social_media", {})
+            num_thumbnails = len(social_media.get("versions", []))
+            self.progress.emit(f"[INFO] Sẽ tạo: {len(scenes)} ảnh xem trước cảnh + {num_thumbnails} thumbnails (có chữ)")
             for i, scene in enumerate(scenes):
                 if self.should_stop:
                     break
@@ -365,12 +368,18 @@ class ImageGenerationWorker(QThread):
 
             # Prepare scenes
             scenes = self.outline.get("scenes", [])
+            social_media = self.outline.get("social_media", {})
+            num_thumbnails = len(social_media.get("versions", []))
+            self.progress.emit(f"[INFO] Sẽ tạo: {len(scenes)} ảnh xem trước cảnh + {num_thumbnails} thumbnails (có chữ)")
 
             # Distribute scenes across accounts using round-robin
             batches = [[] for _ in range(num_accounts)]
             for idx, scene in enumerate(scenes):
                 account_idx = idx % num_accounts
-                batches[account_idx].append((idx, scene))
+                # Use scene.get("index") to maintain consistency with sequential mode
+                # This ensures scene files are named consistently (scene_1.png, scene_2.png, etc.)
+                scene_index = scene.get("index", idx + 1)  # Fallback to 1-indexed if not present
+                batches[account_idx].append((scene_index, scene))
 
             # Results queue for thread-safe communication
             results_queue = Queue()
@@ -1784,7 +1793,8 @@ class VideoBanHangV5(QWidget):
                     card.set_image_path(str(img_path))
                 self.scene_images[scene_idx]["path"] = str(img_path)
 
-            self._append_log(f"✓ Ảnh cảnh {scene_idx}")
+            # Improved logging to clarify this is a scene preview image (not thumbnail)
+            self._append_log(f"✓ Ảnh xem trước cảnh {scene_idx} (scene_{scene_idx}.png)")
 
     def _on_thumbnail_ready(self, version_idx, img_data):
         """Thumbnail ready"""
@@ -1805,7 +1815,8 @@ class VideoBanHangV5(QWidget):
                     pixmap.scaled(270, 480, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 )
 
-            self._append_log(f"✓ Thumbnail {version_idx+1}")
+            # Improved logging to clarify this is a thumbnail with text overlay
+            self._append_log(f"✓ Thumbnail {version_idx+1} (có chữ) - thumbnail_v{version_idx+1}.png")
 
     def _on_images_finished(self, success):
         """Images finished"""

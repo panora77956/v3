@@ -267,10 +267,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", refe
 
             # Check if it's a rate limit error (429 RESOURCE_EXHAUSTED)
             if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
-                # Try to extract error details from the exception
-                error_details = error_msg
-
-                # Parse JSON error if available
+                # Try to extract clean error message from the exception
                 import json
                 import re
 
@@ -287,14 +284,21 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", refe
                             code = error_info.get('code', 'N/A')
                             status = error_info.get('status', 'N/A')
                             message = error_info.get('message', 'N/A')
-                            error_details = f"{code} {status}. {error_json}"
+                            # Format clean error message without full JSON
+                            error_details = f"{code} {status} - {message}"
+                            log(f"[IMAGE GEN] ⚠️ Vertex AI: {error_details}")
+                            log("[IMAGE GEN] → Chuyển sang AI Studio API")
+                            return None
                     except Exception:
-                        # If JSON parsing fails, just use the original message
+                        # If JSON parsing fails, fall through to generic message
                         pass
 
-                log(f"[IMAGE GEN] Lỗi Vertex AI: {error_details}, chuyển sang AI Studio API")
+                # Fallback: generic rate limit message
+                log(f"[IMAGE GEN] ⚠️ Vertex AI: Rate limit exceeded (429 RESOURCE_EXHAUSTED)")
+                log("[IMAGE GEN] → Chuyển sang AI Studio API")
             else:
-                log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
+                log(f"[IMAGE GEN] ⚠️ Vertex AI: {str(e)[:200]}")
+                log("[IMAGE GEN] → Chuyển sang AI Studio API")
 
             return None
 
