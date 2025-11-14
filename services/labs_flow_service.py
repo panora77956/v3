@@ -975,7 +975,13 @@ def _save_prompt_to_disk(prompt_data: Any, project_dir: Optional[str] = None,
         filepath = os.path.join(prompts_dir, filename)
         
         # Build complete prompt text for saving
-        complete_prompt = _build_complete_prompt_text(prompt_data)
+        # FIX: Handle both string and dict inputs
+        if isinstance(prompt_data, str):
+            # Already a string - use as-is
+            complete_prompt = prompt_data
+        else:
+            # Dict - convert to text using builder
+            complete_prompt = _build_complete_prompt_text(prompt_data)
         
         # Prepare metadata
         metadata = {
