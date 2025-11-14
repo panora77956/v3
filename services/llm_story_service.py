@@ -782,17 +782,21 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
     # Long prompts take longer for LLM to process, especially for 480s+ scenarios
     is_long_scenario = sum(per) > 300  # True for 5+ minute videos
 
-    # Check if domain requires no-character narration (like PANORA Science Narrator)
-    # These domains use voiceover narration addressing audience directly ("You", "Your body")
-    # instead of creating fictional characters
-    no_character_domains = [
-        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
-    ]
-    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
+    # Check if a custom prompt exists for this domain/topic
+    # Custom prompts may have special requirements (e.g., no-character narration)
+    # The custom prompt itself will define these rules
+    has_custom_prompt = False
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            test_custom = get_custom_prompt(domain, topic)
+            has_custom_prompt = test_custom is not None
+        except ImportError:
+            pass
     
     # Log the domain/topic selection for debugging
     if domain and topic:
-        print(f"[INFO] Using domain='{domain}', topic='{topic}', no_characters={requires_no_characters}")
+        print(f"[INFO] Using domain='{domain}', topic='{topic}', custom_prompt={has_custom_prompt}")
 
     # ===== CHECK FOR CUSTOM SYSTEM PROMPT =====
     # Check if custom system prompt exists for this domain+topic
@@ -810,6 +814,28 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
     if custom_prompt:
         # Build minimal prompt with ONLY custom prompt + language + schema
         target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
+        
+        # Add enforcement header for ALL custom prompts to strengthen rule adherence
+        enforcement_header = """
+═══════════════════════════════════════════════════════════════
+⚠️⚠️⚠️ CRITICAL ENFORCEMENT RULES ⚠️⚠️⚠️
+═══════════════════════════════════════════════════════════════
+
+This is a CUSTOM PROMPT with specific requirements. You MUST strictly follow 
+ALL rules in the custom system prompt below. Any deviation will cause rejection.
+
+Key Requirements for Custom Prompts:
+1. Follow the EXACT structure specified in the prompt (e.g., 5-stage, ACT-based, etc.)
+2. Use the EXACT narrative voice specified (second-person, third-person, etc.)
+3. Respect ALL prohibitions explicitly stated (character creation, descriptions, etc.)
+4. Generate content matching the specific domain expertise required
+
+⚠️ IF THE CUSTOM PROMPT SAYS "NO CHARACTERS", DO NOT CREATE ANY CHARACTERS
+⚠️ IF THE CUSTOM PROMPT SPECIFIES A STRUCTURE, USE THAT EXACT STRUCTURE
+⚠️ READ THE ENTIRE CUSTOM PROMPT CAREFULLY BEFORE GENERATING
+
+═══════════════════════════════════════════════════════════════
+"""
         
         # Language instruction
         language_instruction = f"""
@@ -855,8 +881,11 @@ OUTPUT FORMAT - Return ONLY valid JSON (no extra text):
 REMINDER: Follow all rules from system prompt above. Total scenes = {n}.
 """
         
-        # Return simplified prompt with custom system prompt
-        return f"""{custom_prompt}
+        # Return simplified prompt with enforcement + custom system prompt
+        return f"""{enforcement_header}
+
+CUSTOM SYSTEM PROMPT:
+{custom_prompt}
 
 {language_instruction}
 
@@ -1282,9 +1311,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                         credentials_json=account.credentials_json
                     )
                     
-                    # Detect if using custom prompt (contains specific markers)
-                    # Custom prompts already include system instructions, so use minimal system instruction
-                    is_custom_prompt = "PANORA SCIENCE NARRATOR" in prompt or "CRITICAL: READ THIS FIRST" in prompt
+                    # Detect if using custom prompt (contains enforcement header)
+                    # Custom prompts already include system instructions, so use stricter system instruction
+                    is_custom_prompt = "CRITICAL ENFORCEMENT RULES" in prompt or "CUSTOM SYSTEM PROMPT:" in prompt
                     
                     if is_custom_prompt:
                         system_instruction = "You are a professional AI assistant. Strictly follow all rules in the prompt. Generate valid JSON output."
@@ -1405,9 +1434,9 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                 url = gemini_text_endpoint(key) if current_model == "gemini-2.5-flash" else \
                       f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={key}"
 
-                # Detect if using custom prompt (contains specific markers)
-                # Custom prompts already include system instructions, so use minimal system instruction
-                is_custom_prompt = "PANORA SCIENCE NARRATOR" in prompt or "CRITICAL: READ THIS FIRST" in prompt
+                # Detect if using custom prompt (contains enforcement header)
+                # Custom prompts already include system instructions, so use stricter system instruction
+                is_custom_prompt = "CRITICAL ENFORCEMENT RULES" in prompt or "CUSTOM SYSTEM PROMPT:" in prompt
                 
                 if is_custom_prompt:
                     system_text = "You are a professional AI assistant. Strictly follow all rules in the prompt. Generate valid JSON output."
@@ -1894,7 +1923,7 @@ def _validate_dialogue_language(scenes, target_lang):
 
 def _validate_no_characters(script_data, domain=None, topic=None):
     """
-    Validate that no-character domains (like PANORA) don't have character names.
+    Validate that custom prompts don't have character names if they prohibit it.
     
     This checks for:
     - Non-empty character_bible/character_bible_tgt arrays
@@ -1909,13 +1938,23 @@ def _validate_no_characters(script_data, domain=None, topic=None):
     Returns:
         tuple: (is_valid: bool, warning_message: str or None)
     """
-    # Check if this is a no-character domain
-    no_character_domains = [
-        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
-    ]
+    # Check if this domain/topic has a custom prompt
+    # Custom prompts may have special validation requirements
+    has_custom_prompt = False
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            custom_prompt = get_custom_prompt(domain, topic)
+            has_custom_prompt = custom_prompt is not None
+            # Only validate if custom prompt explicitly mentions "no character" or similar
+            if has_custom_prompt and "no character" not in custom_prompt.lower():
+                # Custom prompt doesn't prohibit characters, skip validation
+                return True, None
+        except ImportError:
+            pass
     
-    if not domain or not topic or (domain, topic) not in no_character_domains:
-        # Not a no-character domain, skip validation
+    if not has_custom_prompt:
+        # Not a custom prompt domain, skip validation
         return True, None
     
     issues = []
@@ -2037,11 +2076,16 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
     
     target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
     
-    # Check if domain requires no-character narration
-    no_character_domains = [
-        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
-    ]
-    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
+    # Check if a custom prompt exists for this domain/topic
+    # Custom prompts may have special requirements (e.g., no-character narration)
+    has_custom_prompt = False
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            test_custom = get_custom_prompt(domain, topic)
+            has_custom_prompt = test_custom is not None
+        except ImportError:
+            pass
     
     # Build context from previous scenes
     context = ""
@@ -2234,12 +2278,6 @@ def generate_script_scene_by_scene(idea, style, duration_seconds, provider='Gemi
     target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
     
     report_progress(f"Tính toán: {n} cảnh cần tạo (total {duration_seconds}s)", 10)
-    
-    # Check if domain requires no-character narration (like PANORA)
-    no_character_domains = [
-        ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"),
-    ]
-    requires_no_characters = (domain, topic) in no_character_domains if domain and topic else False
     
     # Check if custom prompt exists
     custom_prompt = None
