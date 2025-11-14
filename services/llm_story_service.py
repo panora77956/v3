@@ -235,11 +235,113 @@ def _fix_json_formatting(text: str, max_iterations: int = 10) -> str:
     
     return text
 
+def _fix_truncated_json(text: str) -> str:
+    """
+    Detect and repair truncated JSON by automatically closing unclosed structures.
+    
+    This handles cases where LLM responses are cut off mid-structure, resulting in
+    incomplete JSON with missing closing brackets, braces, or quotes.
+    
+    Strategy:
+    1. Track open/close brackets and braces using a stack
+    2. Detect if JSON is truncated (unbalanced brackets)
+    3. Auto-complete by closing all open structures in reverse order
+    4. Handle special cases like unclosed strings and arrays
+    
+    Args:
+        text: Potentially truncated JSON string
+    
+    Returns:
+        Completed JSON string with all structures properly closed
+    """
+    if not text or not text.strip():
+        return text
+    
+    text = text.strip()
+    
+    # Track open structures using a stack
+    # Each entry is a tuple: (char, position)
+    stack = []
+    in_string = False
+    escape_next = False
+    i = 0
+    
+    while i < len(text):
+        char = text[i]
+        
+        # Handle escape sequences in strings
+        if escape_next:
+            escape_next = False
+            i += 1
+            continue
+        
+        if char == '\\':
+            escape_next = True
+            i += 1
+            continue
+        
+        # Handle string boundaries
+        if char == '"':
+            in_string = not in_string
+            i += 1
+            continue
+        
+        # Only track brackets/braces outside of strings
+        if not in_string:
+            if char == '{':
+                stack.append(('{', i))
+            elif char == '[':
+                stack.append(('[', i))
+            elif char == '}':
+                if stack and stack[-1][0] == '{':
+                    stack.pop()
+            elif char == ']':
+                if stack and stack[-1][0] == '[':
+                    stack.pop()
+        
+        i += 1
+    
+    # If no unclosed structures and not in a string, JSON might be complete
+    if not stack and not in_string:
+        return text
+    
+    # JSON is truncated - need to close structures
+    result = text
+    
+    # If we're in the middle of a string, close it
+    if in_string:
+        result += '"'
+    
+    # Check if the last non-whitespace character suggests incompleteness
+    last_char = text.rstrip()[-1] if text.rstrip() else ''
+    
+    # If last character is a comma or colon, might need to add a placeholder
+    # This handles cases like: "key": "value",  or  "array": [
+    if last_char in [',', ':']:
+        # Look at what's open on the stack
+        if stack and stack[-1][0] == '[':
+            # Inside an array - close the array
+            pass  # Will be closed below
+        elif last_char == ':':
+            # After a key - add a placeholder value
+            result += ' null'
+    
+    # Close all open structures in reverse order (LIFO)
+    while stack:
+        open_char, pos = stack.pop()
+        if open_char == '{':
+            result += '\n}'
+        elif open_char == '[':
+            result += '\n]'
+    
+    return result
+
 def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str, Any]:
     """
-    Robust JSON parser with 5 fallback strategies to handle malformed LLM responses.
+    Robust JSON parser with 6 fallback strategies to handle malformed LLM responses.
 
     Handles common LLM formatting errors including:
+    - Truncated JSON (unclosed brackets, braces, strings)
     - Missing commas between properties
     - Missing commas between objects in arrays
     - Trailing commas
@@ -266,7 +368,17 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
     except json.JSONDecodeError as e:
         print(f"[DEBUG] {source} Strategy 1 failed (direct parse): {e}")
 
-    # Strategy 2: Extract from markdown code blocks
+    # Strategy 2: Fix truncated JSON (auto-complete unclosed structures)
+    try:
+        # Detect and fix truncated JSON by closing open brackets/braces
+        completed = _fix_truncated_json(response_text)
+        if completed != response_text:
+            # JSON was modified (likely truncated) - try parsing
+            return json.loads(completed)
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] {source} Strategy 2 failed (truncation fix): {e}")
+
+    # Strategy 3: Extract from markdown code blocks
     try:
         # Remove markdown code blocks (```json ... ``` or ``` ... ```)
         if "```" in response_text:
@@ -285,9 +397,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
                     cleaned = _fix_json_formatting(cleaned)
                     return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        print(f"[DEBUG] {source} Strategy 2 failed (markdown extraction): {e}")
+        print(f"[DEBUG] {source} Strategy 3 failed (markdown extraction): {e}")
 
-    # Strategy 3: Fix common issues
+    # Strategy 4: Fix common issues
     try:
         cleaned = response_text.strip()
 
@@ -319,9 +431,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
 
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        print(f"[DEBUG] {source} Strategy 3 failed (common fixes): {e}")
+        print(f"[DEBUG] {source} Strategy 4 failed (common fixes): {e}")
 
-    # Strategy 4: Find JSON by boundaries
+    # Strategy 5: Find JSON by boundaries
     try:
         # Find first { and last }
         start = response_text.find('{')
@@ -345,9 +457,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
                 json_str = _fix_json_formatting(json_str)
                 return json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(f"[DEBUG] {source} Strategy 4 failed (boundary extraction): {e}")
+        print(f"[DEBUG] {source} Strategy 5 failed (boundary extraction): {e}")
 
-    # Strategy 5: Detailed error logging and re-raise
+    # Strategy 6: Detailed error logging and re-raise
     print(f"[ERR] {source} All JSON parsing strategies failed!")
     print(f"[DEBUG] Response length: {len(response_text)} characters")
     print(f"[DEBUG] First 500 chars: {response_text[:500]}")
