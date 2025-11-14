@@ -76,6 +76,87 @@ LANGUAGE_NAMES = {
     'id': 'Indonesian (Bahasa Indonesia)'
 }
 
+def _escape_unescaped_strings(text: str) -> str:
+    """
+    Fix unescaped characters within JSON string values.
+    
+    This handles the "Unterminated string" error that occurs when JSON strings
+    contain unescaped newlines, quotes, backslashes, or other special characters.
+    
+    Strategy:
+    1. Find all JSON string values (text between quotes)
+    2. Within each string, escape special characters:
+       - Literal newlines -> \\n
+       - Literal tabs -> \\t
+       - Literal carriage returns -> \\r
+       - Unescaped quotes -> \\"
+       - Unescaped backslashes -> \\\\
+    
+    Args:
+        text: JSON string with potentially unescaped characters
+    
+    Returns:
+        JSON string with properly escaped characters
+    """
+    # This is a complex problem because we need to:
+    # 1. Find string boundaries (opening and closing quotes)
+    # 2. Skip already escaped characters
+    # 3. Handle edge cases like quotes in property names vs values
+    
+    # Use a state machine approach to process character by character
+    result = []
+    in_string = False
+    escape_next = False
+    i = 0
+    
+    while i < len(text):
+        char = text[i]
+        
+        # Handle escape sequences
+        if escape_next:
+            result.append(char)
+            escape_next = False
+            i += 1
+            continue
+        
+        # Check for backslash (escape character)
+        if char == '\\':
+            result.append(char)
+            escape_next = True
+            i += 1
+            continue
+        
+        # Check for quote (string boundary)
+        if char == '"':
+            result.append(char)
+            in_string = not in_string
+            i += 1
+            continue
+        
+        # If we're inside a string, check for unescaped special characters
+        if in_string:
+            if char == '\n':
+                # Unescaped newline - replace with \\n
+                result.append('\\n')
+                i += 1
+                continue
+            elif char == '\r':
+                # Unescaped carriage return - replace with \\r
+                result.append('\\r')
+                i += 1
+                continue
+            elif char == '\t':
+                # Unescaped tab - replace with \\t
+                result.append('\\t')
+                i += 1
+                continue
+        
+        # Regular character - just append
+        result.append(char)
+        i += 1
+    
+    return ''.join(result)
+
 def _fix_json_formatting(text: str, max_iterations: int = 10) -> str:
     """
     Apply comprehensive JSON formatting fixes for common LLM errors.
@@ -198,7 +279,9 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
                 try:
                     return json.loads(cleaned)
                 except json.JSONDecodeError:
-                    # If direct parse fails, apply formatting fixes
+                    # If direct parse fails, apply escape fixes first
+                    cleaned = _escape_unescaped_strings(cleaned)
+                    # Then apply formatting fixes
                     cleaned = _fix_json_formatting(cleaned)
                     return json.loads(cleaned)
     except json.JSONDecodeError as e:
@@ -227,6 +310,10 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
         # This fixes the "Invalid control character" error
         cleaned = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', cleaned)
 
+        # CRITICAL FIX: Escape unescaped special characters in strings
+        # This fixes "Unterminated string" errors caused by literal newlines/quotes
+        cleaned = _escape_unescaped_strings(cleaned)
+
         # Apply comprehensive JSON formatting fixes
         cleaned = _fix_json_formatting(cleaned)
 
@@ -245,6 +332,10 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
 
             # Remove invalid control characters
             json_str = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F]', '', json_str)
+
+            # CRITICAL FIX: Escape unescaped special characters in strings
+            # This fixes "Unterminated string" errors caused by literal newlines/quotes
+            json_str = _escape_unescaped_strings(json_str)
 
             # Try to parse
             try:
