@@ -1209,14 +1209,22 @@ class LabsClient:
 
         def _make_body(use_model, mid_val, copies_n):
             # Build Google Labs API format request
+            import uuid
             requests_list = []
+            scene_ids = []  # Track sceneIds for later metadata storage
             for k in range(copies_n):
                 seed = base_seed + k if copies_n > 1 else base_seed
+                
+                # Generate unique sceneId for each request
+                # CRITICAL: This sceneId must be included when checking generation status
+                scene_id = str(uuid.uuid4())
+                scene_ids.append(scene_id)
                 
                 request_item = {
                     "aspectRatio": aspect_ratio,
                     "seed": seed,
-                    "videoModelKey": use_model
+                    "videoModelKey": use_model,
+                    "metadata": {"sceneId": scene_id}
                 }
                 
                 # Add prompt - different field for I2V vs T2V
@@ -1239,7 +1247,7 @@ class LabsClient:
             if project_id:
                 body["clientContext"] = {"projectId": project_id}
             
-            return body
+            return body, scene_ids
 
         def _try(body):
             url=I2V_URL if mid else T2V_URL
@@ -1258,11 +1266,12 @@ class LabsClient:
             return ("401" in str(e)) or ("unauthorized" in s) or ("authentication" in s and "invalid" in s)
 
         # 1) Try batch with model fallbacks
-        data=None; last_err=None
+        data=None; last_err=None; request_scene_ids=[]
         for mkey in models:
             try:
                 self._emit("trying_model", model_key=mkey, attempt="batch")
-                data=_try(_make_body(mkey, mid, copies))
+                body, request_scene_ids = _make_body(mkey, mid, copies)
+                data=_try(body)
                 last_err=None
                 self._emit("model_success", model_key=mkey, has_data=data is not None)
                 break
@@ -1285,7 +1294,8 @@ class LabsClient:
                     job["media_id"]=new_mid; mid=new_mid
                     for mkey in models:
                         try:
-                            data=_try(_make_body(mkey, mid, copies)); last_err=None; break
+                            body, request_scene_ids = _make_body(mkey, mid, copies)
+                            data=_try(body); last_err=None; break
                         except Exception as e2:
                             last_err=e2
                             # Stop on auth errors
@@ -1312,17 +1322,18 @@ class LabsClient:
             for k in range(copies):
                 for mkey in models:
                     try:
-                        dat=_try(_make_body(mkey, mid, 1))
+                        body, single_scene_ids = _make_body(mkey, mid, 1)
+                        dat=_try(body)
                         ops=dat.get("operations",[]) if isinstance(dat,dict) else []
                         if ops:
                             nm=(ops[0].get("operation") or {}).get("name") or ops[0].get("name") or ""
                             if nm:
                                 job["operation_names"].append(nm)
                                 job["op_index_map"][nm]=k
-                                # Store metadata for batch check (sceneId and status from Google API)
-                                # Always store metadata with at least the default status for Google API compatibility
-                                scene_id = ops[0].get("sceneId", "")
-                                status = ops[0].get("status", "MEDIA_GENERATION_STATUS_PENDING")
+                                # Store metadata for batch check with sceneId we sent in request
+                                # Use the sceneId we generated, not from response
+                                scene_id = single_scene_ids[0] if single_scene_ids else ""
+                                status = "MEDIA_GENERATION_STATUS_PENDING"
                                 job["operation_metadata"][nm] = {"sceneId": scene_id, "status": status}
                                 break
                     except Exception as e:
@@ -1342,10 +1353,10 @@ class LabsClient:
             if nm:
                 job["operation_names"].append(nm)
                 job["op_index_map"][nm]=ci
-                # Store metadata for batch check (sceneId and status from Google API)
-                # Always store metadata with at least the default status for Google API compatibility
-                scene_id = op.get("sceneId", "")
-                status = op.get("status", "MEDIA_GENERATION_STATUS_PENDING")
+                # Store metadata for batch check with sceneId we sent in request
+                # Use the sceneId we generated and sent, not from response
+                scene_id = request_scene_ids[ci] if ci < len(request_scene_ids) else ""
+                status = "MEDIA_GENERATION_STATUS_PENDING"
                 job["operation_metadata"][nm] = {"sceneId": scene_id, "status": status}
         if job.get("operation_names"): job["status"]="PENDING"
 
@@ -1377,11 +1388,13 @@ class LabsClient:
         for op_name in uniq:
             op_entry = {"operation": {"name": op_name}}
             # Include sceneId and status if available in metadata
+            # CRITICAL: Always include these fields if they exist in metadata, even if empty
+            # The Google API requires these fields for proper operation tracking
             if metadata and op_name in metadata:
                 meta = metadata[op_name]
-                if meta.get("sceneId"):
+                if "sceneId" in meta:
                     op_entry["sceneId"] = meta["sceneId"]
-                if meta.get("status"):
+                if "status" in meta:
                     op_entry["status"] = meta["status"]
             operations.append(op_entry)
 
