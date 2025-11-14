@@ -518,6 +518,9 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
         # Enhanced with MORE DETAIL including physical attributes and accessories
         char_parts = []
         for char in character_bible:
+            # Defensive: Skip non-dict items (can happen when JSON parsing partially fails)
+            if not isinstance(char, dict):
+                continue
             nm = char.get("name", "")
             role = char.get("role", "")
             visual = char.get("visual_identity", "")
