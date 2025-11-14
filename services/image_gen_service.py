@@ -60,7 +60,12 @@ def _extract_image_from_response(data: dict) -> bytes:
 
 def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", reference_images: list = None, log_fn=None) -> Optional[bytes]:
     """
-    Try to generate image using Vertex AI if enabled
+    Try to generate image using Vertex AI with account rotation on rate limits
+    
+    This function now implements intelligent account rotation similar to AI Studio API key rotation:
+    - Tries all available Vertex AI accounts before falling back to AI Studio
+    - Implements exponential backoff between account switches (10s, 20s, 40s...)
+    - Only falls back to AI Studio after all Vertex accounts are exhausted
     
     Args:
         prompt: Image generation prompt
@@ -97,209 +102,239 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", refe
             account_mgr = get_vertex_account_manager()
             account_mgr.load_from_config(config)
 
-            # Get next enabled account
-            account = account_mgr.get_next_account()
+            # Get all enabled accounts for rotation
+            enabled_accounts = account_mgr.get_enabled_accounts()
 
-            if not account:
+            if not enabled_accounts:
                 log("[IMAGE GEN] Không có Vertex AI service account khả dụng")
                 return None
 
-            log(f"[IMAGE GEN] Đang thử Vertex AI với account: {account.name}")
+            # Try each account with exponential backoff
+            rate_limit_count = 0
+            last_error = None
 
-            # Handle service account credentials if provided
-            import os
-            import tempfile
-            temp_creds_file = None
-            if account.credentials_json:
-                temp_creds_file = tempfile.NamedTemporaryFile(
-                    mode='w',
-                    suffix='.json',
-                    delete=False
-                )
-                temp_creds_file.write(account.credentials_json)
-                temp_creds_file.close()
-                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
+            for idx, account in enumerate(enabled_accounts):
+                # Exponential backoff between account switches (similar to AI Studio key rotation)
+                # Start with 10s base delay and double each time: 10s, 20s, 40s...
+                if idx > 0:
+                    delay = 10 * (2 ** (idx - 1))
+                    # Cap at 60s to avoid excessive waits
+                    delay = min(delay, 60)
+                    log(f"[VERTEX BACKOFF] Waiting {delay}s before trying next account...")
+                    time.sleep(delay)
 
-            try:
-                # Initialize Vertex AI client using google-genai SDK
-                log("[IMAGE GEN] Khởi tạo Vertex AI client với Gemini model...")
+                log(f"[VERTEX AI {idx + 1}/{len(enabled_accounts)}] Đang thử account: {account.name}")
 
-                client = genai.Client(
-                    vertexai=True,
-                    project=account.project_id,
-                    location=account.location
-                )
+                # Handle service account credentials if provided
+                import os
+                import tempfile
+                temp_creds_file = None
+                if account.credentials_json:
+                    temp_creds_file = tempfile.NamedTemporaryFile(
+                        mode='w',
+                        suffix='.json',
+                        delete=False
+                    )
+                    temp_creds_file.write(account.credentials_json)
+                    temp_creds_file.close()
+                    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
 
-                # Use configured Vertex AI image model (gemini-2.5-flash-image)
-                model_name = VERTEX_AI_IMAGE_MODEL
+                try:
+                    # Initialize Vertex AI client using google-genai SDK
+                    log("[IMAGE GEN] Khởi tạo Vertex AI client với Gemini model...")
 
-                log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")
+                    client = genai.Client(
+                        vertexai=True,
+                        project=account.project_id,
+                        location=account.location
+                    )
 
-                # Build contents array with text prompt and optional reference images
-                contents_parts = []
-                
-                # Add text prompt
-                contents_parts.append(types.Part(text=prompt))
-                
-                # Add reference images if provided (for product consistency)
-                if reference_images:
-                    log(f"[IMAGE GEN] Thêm {len(reference_images)} ảnh tham chiếu cho tính nhất quán sản phẩm")
-                    for img_path in reference_images[:2]:  # Limit to 2 reference images
-                        try:
-                            with open(img_path, 'rb') as img_file:
-                                img_bytes = img_file.read()
-                                # Add as inline data
-                                contents_parts.append(types.Part(
-                                    inline_data=types.Blob(
-                                        mime_type='image/jpeg',
-                                        data=img_bytes
-                                    )
-                                ))
-                        except Exception as img_err:
-                            log(f"[IMAGE GEN] ⚠️ Không thể đọc ảnh tham chiếu {img_path}: {img_err}")
+                    # Use configured Vertex AI image model (gemini-2.5-flash-image)
+                    model_name = VERTEX_AI_IMAGE_MODEL
 
-                # Build generation config with aspect ratio
-                config_params = {
-                    "temperature": 0.9,
-                    "top_k": 40,
-                    "top_p": 0.95,
-                }
-                
-                # Add aspect ratio to image_config if supported
-                # Note: aspect_ratio support depends on the model version
-                if aspect_ratio and aspect_ratio != "1:1":
-                    # Map aspect ratios to Vertex AI format
-                    aspect_map = {
-                        "9:16": "9:16",
-                        "16:9": "16:9",
-                        "4:5": "3:4",  # Closest supported ratio
-                        "3:4": "3:4",
-                        "1:1": "1:1",
-                    }
-                    vertex_aspect = aspect_map.get(aspect_ratio, "1:1")
-                    if vertex_aspect != aspect_ratio:
-                        log(f"[IMAGE GEN] Chuyển đổi aspect ratio {aspect_ratio} → {vertex_aspect} (Vertex AI)")
+                    log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")
+
+                    # Build contents array with text prompt and optional reference images
+                    contents_parts = []
                     
-                    # Try to add aspect_ratio using ImageConfig (may not be supported by all model versions)
-                    try:
-                        # Use the proper ImageConfig type if available
-                        if hasattr(types, 'ImageConfig'):
-                            config_params["image_config"] = types.ImageConfig(aspect_ratio=vertex_aspect)
+                    # Add text prompt
+                    contents_parts.append(types.Part(text=prompt))
+                    
+                    # Add reference images if provided (for product consistency)
+                    if reference_images:
+                        log(f"[IMAGE GEN] Thêm {len(reference_images)} ảnh tham chiếu cho tính nhất quán sản phẩm")
+                        for img_path in reference_images[:2]:  # Limit to 2 reference images
+                            try:
+                                with open(img_path, 'rb') as img_file:
+                                    img_bytes = img_file.read()
+                                    # Add as inline data
+                                    contents_parts.append(types.Part(
+                                        inline_data=types.Blob(
+                                            mime_type='image/jpeg',
+                                            data=img_bytes
+                                        )
+                                    ))
+                            except Exception as img_err:
+                                log(f"[IMAGE GEN] ⚠️ Không thể đọc ảnh tham chiếu {img_path}: {img_err}")
+
+                    # Build generation config with aspect ratio
+                    config_params = {
+                        "temperature": 0.9,
+                        "top_k": 40,
+                        "top_p": 0.95,
+                    }
+                    
+                    # Add aspect ratio to image_config if supported
+                    # Note: aspect_ratio support depends on the model version
+                    if aspect_ratio and aspect_ratio != "1:1":
+                        # Map aspect ratios to Vertex AI format
+                        aspect_map = {
+                            "9:16": "9:16",
+                            "16:9": "16:9",
+                            "4:5": "3:4",  # Closest supported ratio
+                            "3:4": "3:4",
+                            "1:1": "1:1",
+                        }
+                        vertex_aspect = aspect_map.get(aspect_ratio, "1:1")
+                        if vertex_aspect != aspect_ratio:
+                            log(f"[IMAGE GEN] Chuyển đổi aspect ratio {aspect_ratio} → {vertex_aspect} (Vertex AI)")
+                        
+                        # Try to add aspect_ratio using ImageConfig (may not be supported by all model versions)
+                        try:
+                            # Use the proper ImageConfig type if available
+                            if hasattr(types, 'ImageConfig'):
+                                config_params["image_config"] = types.ImageConfig(aspect_ratio=vertex_aspect)
+                            else:
+                                # Fallback to dictionary format for older SDK versions
+                                config_params["image_config"] = {"aspect_ratio": vertex_aspect}
+                        except Exception as e:
+                            # If not supported, fall back to prompt-based approach
+                            log(f"[IMAGE GEN] Model không hỗ trợ image_config ({e}), sử dụng prompt hints")
+
+                    # Generate image using Gemini model
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=contents_parts,
+                        config=types.GenerateContentConfig(**config_params)
+                    )
+
+                    # Extract image bytes from response
+                    if hasattr(response, 'candidates') and response.candidates:
+                        candidate = response.candidates[0]
+                        if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                            parts = candidate.content.parts
+                            for part in parts:
+                                # Look for inline_data with image
+                                if hasattr(part, 'inline_data') and part.inline_data is not None:
+                                    mime_type = part.inline_data.mime_type
+                                    if mime_type and mime_type.startswith('image/'):
+                                        # The data format depends on the SDK version and API used:
+                                        # - Vertex AI: returns raw bytes directly
+                                        # - AI Studio: returns base64-encoded string
+                                        import base64
+
+                                        data = part.inline_data.data
+
+                                        # Check if data is already bytes or needs decoding
+                                        if isinstance(data, bytes):
+                                            # Already in bytes format (Vertex AI)
+                                            image_bytes = data
+                                        else:
+                                            # Need to decode from base64 string (AI Studio)
+                                            image_bytes = base64.b64decode(data)
+
+                                        # Validate image size - a valid image should be at least 1KB
+                                        # If too small (e.g., 65 bytes), it's likely an error
+                                        MIN_VALID_IMAGE_SIZE = 1024  # 1KB
+                                        if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
+                                            size_msg = (
+                                                f"[IMAGE GEN] ⚠️ Vertex AI trả về dữ liệu quá nhỏ "
+                                                f"({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes)"
+                                            )
+                                            log(size_msg)
+                                            log(
+                                                "[IMAGE GEN] Dữ liệu có thể không phải ảnh hợp lệ, "
+                                                "thử account tiếp theo"
+                                            )
+                                            continue  # Try next account instead of immediate fallback
+
+                                        success_msg = (
+                                            f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với account {account.name} "
+                                            f"({len(image_bytes)} bytes)"
+                                        )
+                                        log(success_msg)
+                                        return image_bytes
+
+                    log(f"[IMAGE GEN] Account {account.name} không trả về ảnh")
+                    continue  # Try next account
+
+                except Exception as e:
+                    # Extract detailed error information for better debugging
+                    error_msg = str(e)
+                    last_error = e
+
+                    # Check if it's a rate limit error (429 RESOURCE_EXHAUSTED)
+                    if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
+                        rate_limit_count += 1
+                        
+                        # Try to extract clean error message from the exception
+                        import json
+                        import re
+
+                        # Try to find JSON object with nested structure
+                        json_match = re.search(r'\{[\'"]error[\'"]\s*:\s*\{[^}]+\}\}', error_msg)
+                        if json_match:
+                            try:
+                                # Replace single quotes with double quotes for valid JSON
+                                json_str = json_match.group(0).replace("'", '"')
+                                error_json = json.loads(json_str)
+                                if 'error' in error_json:
+                                    error_info = error_json['error']
+                                    code = error_info.get('code', 'N/A')
+                                    status = error_info.get('status', 'N/A')
+                                    message = error_info.get('message', 'N/A')
+                                    # Format clean error message without full JSON
+                                    error_details = f"{code} {status} - {message}"
+                                    log(f"[IMAGE GEN] ⚠️ Vertex AI ({account.name}): {error_details}")
+                            except Exception:
+                                # If JSON parsing fails, use generic message
+                                log(f"[IMAGE GEN] ⚠️ Vertex AI ({account.name}): Rate limit exceeded (429 RESOURCE_EXHAUSTED)")
                         else:
-                            # Fallback to dictionary format for older SDK versions
-                            config_params["image_config"] = {"aspect_ratio": vertex_aspect}
-                    except Exception as e:
-                        # If not supported, fall back to prompt-based approach
-                        log(f"[IMAGE GEN] Model không hỗ trợ image_config ({e}), sử dụng prompt hints")
+                            log(f"[IMAGE GEN] ⚠️ Vertex AI ({account.name}): Rate limit exceeded (429 RESOURCE_EXHAUSTED)")
+                        
+                        log(f"[RATE LIMIT] Account {account.name} hit rate limit - {rate_limit_count}/{len(enabled_accounts)} accounts exhausted")
+                        
+                        # If all accounts are rate limited, warn user
+                        if rate_limit_count >= len(enabled_accounts):
+                            log(f"[WARNING] All {len(enabled_accounts)} Vertex AI accounts are rate limited")
+                        
+                        # Continue to next account with backoff
+                        continue
+                    else:
+                        # Other errors - log and try next account
+                        log(f"[IMAGE GEN] ⚠️ Vertex AI ({account.name}): {str(e)[:200]}")
+                        continue
 
-                # Generate image using Gemini model
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=contents_parts,
-                    config=types.GenerateContentConfig(**config_params)
-                )
+                finally:
+                    # Clean up temp credentials file
+                    if temp_creds_file:
+                        try:
+                            os.unlink(temp_creds_file.name)
+                        except Exception:
+                            pass
 
-                # Extract image bytes from response
-                if hasattr(response, 'candidates') and response.candidates:
-                    candidate = response.candidates[0]
-                    if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                        parts = candidate.content.parts
-                        for part in parts:
-                            # Look for inline_data with image
-                            if hasattr(part, 'inline_data') and part.inline_data is not None:
-                                mime_type = part.inline_data.mime_type
-                                if mime_type and mime_type.startswith('image/'):
-                                    # The data format depends on the SDK version and API used:
-                                    # - Vertex AI: returns raw bytes directly
-                                    # - AI Studio: returns base64-encoded string
-                                    import base64
-
-                                    data = part.inline_data.data
-
-                                    # Check if data is already bytes or needs decoding
-                                    if isinstance(data, bytes):
-                                        # Already in bytes format (Vertex AI)
-                                        image_bytes = data
-                                    else:
-                                        # Need to decode from base64 string (AI Studio)
-                                        image_bytes = base64.b64decode(data)
-
-                                    # Validate image size - a valid image should be at least 1KB
-                                    # If too small (e.g., 65 bytes), it's likely an error
-                                    MIN_VALID_IMAGE_SIZE = 1024  # 1KB
-                                    if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
-                                        size_msg = (
-                                            f"[IMAGE GEN] ⚠️ Vertex AI trả về dữ liệu quá nhỏ "
-                                            f"({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes)"
-                                        )
-                                        log(size_msg)
-                                        log(
-                                            "[IMAGE GEN] Dữ liệu có thể không phải ảnh hợp lệ, "
-                                            "bỏ qua và thử AI Studio API"
-                                        )
-                                        return None
-
-                                    success_msg = (
-                                        f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với Gemini "
-                                        f"({len(image_bytes)} bytes)"
-                                    )
-                                    log(success_msg)
-                                    return image_bytes
-
-                log("[IMAGE GEN] Vertex AI không trả về ảnh")
-                return None
-
-            finally:
-                # Clean up temp credentials file
-                if temp_creds_file:
-                    try:
-                        os.unlink(temp_creds_file.name)
-                    except Exception:
-                        pass
+            # All Vertex accounts exhausted - fall back to AI Studio
+            if rate_limit_count >= len(enabled_accounts):
+                log(f"[IMAGE GEN] All {len(enabled_accounts)} Vertex AI accounts are rate limited")
+            else:
+                log(f"[IMAGE GEN] All {len(enabled_accounts)} Vertex AI accounts failed")
+            
+            log("[IMAGE GEN] → Chuyển sang AI Studio API")
+            return None
 
         except ImportError as ie:
             log(f"[IMAGE GEN] Vertex AI được bật nhưng thiếu dependencies: {ie}")
             log("[IMAGE GEN] Chạy: pip install google-genai>=0.3.0")
-            return None
-        except Exception as e:
-            # Extract detailed error information for better debugging
-            error_msg = str(e)
-
-            # Check if it's a rate limit error (429 RESOURCE_EXHAUSTED)
-            if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
-                # Try to extract clean error message from the exception
-                import json
-                import re
-
-                # Try to find JSON object with nested structure
-                # Look for pattern: {'error': {...}}
-                json_match = re.search(r'\{[\'"]error[\'"]\s*:\s*\{[^}]+\}\}', error_msg)
-                if json_match:
-                    try:
-                        # Replace single quotes with double quotes for valid JSON
-                        json_str = json_match.group(0).replace("'", '"')
-                        error_json = json.loads(json_str)
-                        if 'error' in error_json:
-                            error_info = error_json['error']
-                            code = error_info.get('code', 'N/A')
-                            status = error_info.get('status', 'N/A')
-                            message = error_info.get('message', 'N/A')
-                            # Format clean error message without full JSON
-                            error_details = f"{code} {status} - {message}"
-                            log(f"[IMAGE GEN] ⚠️ Vertex AI: {error_details}")
-                            log("[IMAGE GEN] → Chuyển sang AI Studio API")
-                            return None
-                    except Exception:
-                        # If JSON parsing fails, fall through to generic message
-                        pass
-
-                # Fallback: generic rate limit message
-                log(f"[IMAGE GEN] ⚠️ Vertex AI: Rate limit exceeded (429 RESOURCE_EXHAUSTED)")
-                log("[IMAGE GEN] → Chuyển sang AI Studio API")
-            else:
-                log(f"[IMAGE GEN] ⚠️ Vertex AI: {str(e)[:200]}")
-                log("[IMAGE GEN] → Chuyển sang AI Studio API")
-
             return None
 
     except Exception as e:
