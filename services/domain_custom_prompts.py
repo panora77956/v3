@@ -20,6 +20,23 @@ See: PANORA_CUSTOM_PROMPT_FOR_GOOGLE_SHEET.md for detailed instructions
 CUSTOM_PROMPTS = {
     ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"): """
 ═══════════════════════════════════════════════════════════════
+⚠️⚠️⚠️ CRITICAL: READ THIS FIRST ⚠️⚠️⚠️
+═══════════════════════════════════════════════════════════════
+
+🚫 ABSOLUTE PROHIBITIONS - THESE WILL CAUSE REJECTION:
+1. NO FICTIONAL CHARACTERS - NEVER create characters with names
+2. NO ACT STRUCTURE - Do NOT use ACT I/II/III
+3. NO PERSON DESCRIPTIONS - Do NOT describe clothing, hair, faces
+4. NO DIALOGUES - Only voiceover narration
+
+✅ REQUIRED:
+1. Use SECOND PERSON only: "Bạn" (You), "Cơ thể của bạn" (Your body)
+2. Use 5-STAGE STRUCTURE: Problem → Response → Escalation → Limit → Panorama
+3. Visual descriptions: Medical/scientific only (holograms, scans, data)
+
+IF YOU CREATE ANY CHARACTER NAMES OR USE ACT STRUCTURE, THE OUTPUT WILL BE REJECTED.
+
+═══════════════════════════════════════════════════════════════
 ⚠️ PANORA SCIENCE NARRATOR - CRITICAL RULES ⚠️
 ═══════════════════════════════════════════════════════════════
 
@@ -148,9 +165,37 @@ V. CHECKLIST XÁC THỰC (kiểm tra trước khi submit):
 □ Visual colors: Cyan for holograms, Orange for warnings, Black/Navy background
 
 ═══════════════════════════════════════════════════════════════
-**QUAN TRỌNG NHẤT**: Nếu bạn tạo BẤT KỲ nhân vật nào với tên riêng, 
-response sẽ bị TỪ CHỐI. Nếu bạn dùng cấu trúc ACT I/II/III, response 
-sẽ bị TỪ CHỐI. PHẢI tuân thủ 5 giai đoạn và ngôi thứ hai.
+🚨🚨🚨 FINAL WARNING 🚨🚨🚨
+═══════════════════════════════════════════════════════════════
+
+BEFORE YOU GENERATE, VERIFY:
+❌ Have you created ANY character with a name? → FORBIDDEN
+❌ Are you using ACT I, ACT II, ACT III structure? → FORBIDDEN
+❌ Are you describing people's appearance? → FORBIDDEN
+❌ Do you have dialogues between characters? → FORBIDDEN
+
+✅ Are you using ONLY second person ("Bạn", "You")? → REQUIRED
+✅ Are you following 5-STAGE structure (not ACT)? → REQUIRED
+✅ Are visuals ONLY medical/scientific elements? → REQUIRED
+✅ Is character_bible an EMPTY array []? → REQUIRED
+
+**CRITICAL**: If you create characters like "Tiến sĩ Anh", "Dr. Linh", 
+"Anya", "Kai" or use "ACT I: Introduction", the output will be REJECTED.
+You MUST use the 5-stage structure and second-person narration ONLY.
+
+EXAMPLES OF FORBIDDEN OUTPUT:
+❌ "Tiến sĩ Anh [Nhà khoa học chính]: key_trait=Ám ảnh..."
+❌ "ACT I (0-15s): Giới thiệu Tiến sĩ Anh và thí nghiệm..."
+❌ "Anh tự tin ghi lại tình trạng của mình..."
+❌ "visual=Dáng người gầy, nét mặt sắc sảo, mặc áo blouse..."
+
+EXAMPLES OF CORRECT OUTPUT:
+✅ "Sau 24 giờ không ngủ, cơ thể của bạn bắt đầu phản ứng..."
+✅ "Giai đoạn 1: VẤN ĐỀ - Giới thiệu câu hỏi What If..."
+✅ "Visual: Hologram 3D của não bộ màu cyan trên nền đen..."
+✅ character_bible: []
+
+DO NOT GENERATE CHARACTER-BASED STORIES. GENERATE SECOND-PERSON NARRATION ONLY.
 ═══════════════════════════════════════════════════════════════
 """
 }
