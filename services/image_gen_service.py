@@ -69,10 +69,10 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
         
         # Check if Vertex AI is enabled
         if not vertex_config.get('enabled', False):
-            log("[IMAGE GEN] Vertex AI không được bật, sử dụng AI Studio API")
+            # Vertex AI is disabled - this is not an error, just use AI Studio API
             return None
         
-        # Try to use service account manager
+        # Vertex AI is enabled, now try to import required modules
         try:
             from services.vertex_service_account_manager import get_vertex_account_manager
             import vertexai
@@ -185,7 +185,8 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                         pass
                 
         except ImportError as ie:
-            log(f"[IMAGE GEN] Không thể import module cần thiết: {ie}")
+            log(f"[IMAGE GEN] Vertex AI được bật nhưng thiếu dependencies: {ie}")
+            log("[IMAGE GEN] Chạy: pip install google-cloud-aiplatform")
             return None
         except Exception as e:
             log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
