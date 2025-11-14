@@ -58,13 +58,14 @@ def _extract_image_from_response(data: dict) -> bytes:
     raise ImageGenError("No image data found in response")
 
 
-def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_fn=None) -> Optional[bytes]:
+def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", reference_images: list = None, log_fn=None) -> Optional[bytes]:
     """
     Try to generate image using Vertex AI if enabled
     
     Args:
         prompt: Image generation prompt
         aspect_ratio: Image aspect ratio (e.g., "9:16", "16:9", "1:1")
+        reference_images: Optional list of reference image paths for product consistency
         log_fn: Optional callback function for logging
         
     Returns:
@@ -134,25 +135,68 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
 
                 log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")
 
-                # Add aspect ratio hint to prompt for better results
-                aspect_hint = ""
-                if aspect_ratio and aspect_ratio != "1:1":
-                    if aspect_ratio in ("9:16", "4:5", "3:4"):
-                        aspect_hint = " (portrait orientation, vertical format)"
-                    elif aspect_ratio in ("16:9", "21:9"):
-                        aspect_hint = " (landscape orientation, horizontal format)"
+                # Build contents array with text prompt and optional reference images
+                contents_parts = []
+                
+                # Add text prompt
+                contents_parts.append(types.Part(text=prompt))
+                
+                # Add reference images if provided (for product consistency)
+                if reference_images:
+                    log(f"[IMAGE GEN] Thêm {len(reference_images)} ảnh tham chiếu cho tính nhất quán sản phẩm")
+                    for img_path in reference_images[:2]:  # Limit to 2 reference images
+                        try:
+                            with open(img_path, 'rb') as img_file:
+                                img_bytes = img_file.read()
+                                # Add as inline data
+                                contents_parts.append(types.Part(
+                                    inline_data=types.Blob(
+                                        mime_type='image/jpeg',
+                                        data=img_bytes
+                                    )
+                                ))
+                        except Exception as img_err:
+                            log(f"[IMAGE GEN] ⚠️ Không thể đọc ảnh tham chiếu {img_path}: {img_err}")
 
-                enhanced_prompt = prompt + aspect_hint if aspect_hint else prompt
+                # Build generation config with aspect ratio
+                config_params = {
+                    "temperature": 0.9,
+                    "top_k": 40,
+                    "top_p": 0.95,
+                }
+                
+                # Add aspect ratio to image_config if supported
+                # Note: aspect_ratio support depends on the model version
+                if aspect_ratio and aspect_ratio != "1:1":
+                    # Map aspect ratios to Vertex AI format
+                    aspect_map = {
+                        "9:16": "9:16",
+                        "16:9": "16:9",
+                        "4:5": "3:4",  # Closest supported ratio
+                        "3:4": "3:4",
+                        "1:1": "1:1",
+                    }
+                    vertex_aspect = aspect_map.get(aspect_ratio, "1:1")
+                    if vertex_aspect != aspect_ratio:
+                        log(f"[IMAGE GEN] Chuyển đổi aspect ratio {aspect_ratio} → {vertex_aspect} (Vertex AI)")
+                    
+                    # Try to add aspect_ratio using ImageConfig (may not be supported by all model versions)
+                    try:
+                        # Use the proper ImageConfig type if available
+                        if hasattr(types, 'ImageConfig'):
+                            config_params["image_config"] = types.ImageConfig(aspect_ratio=vertex_aspect)
+                        else:
+                            # Fallback to dictionary format for older SDK versions
+                            config_params["image_config"] = {"aspect_ratio": vertex_aspect}
+                    except Exception as e:
+                        # If not supported, fall back to prompt-based approach
+                        log(f"[IMAGE GEN] Model không hỗ trợ image_config ({e}), sử dụng prompt hints")
 
                 # Generate image using Gemini model
                 response = client.models.generate_content(
                     model=model_name,
-                    contents=enhanced_prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.9,
-                        top_k=40,
-                        top_p=0.95,
-                    )
+                    contents=contents_parts,
+                    config=types.GenerateContentConfig(**config_params)
                 )
 
                 # Extract image bytes from response
@@ -162,7 +206,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                         parts = candidate.content.parts
                         for part in parts:
                             # Look for inline_data with image
-                            if hasattr(part, 'inline_data'):
+                            if hasattr(part, 'inline_data') and part.inline_data is not None:
                                 mime_type = part.inline_data.mime_type
                                 if mime_type and mime_type.startswith('image/'):
                                     # The data format depends on the SDK version and API used:
@@ -285,6 +329,7 @@ def generate_image_gemini(prompt: str, timeout: int = None, retry_delay: float =
     vertex_result = _try_vertex_ai_image_generation(
         prompt=prompt,
         aspect_ratio="1:1",  # Default aspect ratio
+        reference_images=None,
         log_fn=log_callback
     )
     if vertex_result:
@@ -432,6 +477,7 @@ def generate_image_with_rate_limit(
             vertex_result = _try_vertex_ai_image_generation(
                 prompt=actual_prompt,
                 aspect_ratio=aspect_ratio,
+                reference_images=reference_images,
                 log_fn=log_fn
             )
             if vertex_result:
