@@ -14,6 +14,7 @@ Version: 7.0.0
 
 import sys
 import os
+import signal
 from PyQt5.QtWidgets import (
     QApplication, QTabWidget, QMessageBox, QWidget
 )
@@ -356,6 +357,21 @@ class MainWindow(QTabWidget):
         event.accept()
 
 
+def setup_signal_handlers():
+    """Setup signal handlers for graceful shutdown"""
+    def signal_handler(signum, frame):
+        """Handle interrupt signals gracefully"""
+        print("\n" + "=" * 70)
+        print("⚠️ INTERRUPT SIGNAL RECEIVED - Shutting down gracefully...")
+        print("=" * 70 + "\n")
+        QApplication.quit()
+    
+    # Register signal handlers for Unix-like systems
+    signal.signal(signal.SIGINT, signal_handler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, signal_handler)
+
+
 def setup_application():
     """Setup QApplication with proper settings"""
     # High DPI support
@@ -400,6 +416,9 @@ def main():
 
     # Setup application
     app = setup_application()
+    
+    # Setup signal handlers for graceful shutdown
+    setup_signal_handlers()
 
     # Apply theme
     try:
@@ -425,6 +444,12 @@ def main():
         print("=" * 70 + "\n")
 
         sys.exit(exit_code)
+
+    except KeyboardInterrupt:
+        print("\n" + "=" * 70)
+        print("⚠️ APPLICATION INTERRUPTED BY USER (Ctrl+C)")
+        print("=" * 70 + "\n")
+        sys.exit(0)
 
     except Exception as e:
         print("\n" + "=" * 70)
