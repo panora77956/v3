@@ -180,12 +180,17 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", refe
                     if vertex_aspect != aspect_ratio:
                         log(f"[IMAGE GEN] Chuyển đổi aspect ratio {aspect_ratio} → {vertex_aspect} (Vertex AI)")
                     
-                    # Try to add aspect_ratio to config (may not be supported by all model versions)
+                    # Try to add aspect_ratio using ImageConfig (may not be supported by all model versions)
                     try:
-                        config_params["image_config"] = {"aspect_ratio": vertex_aspect}
-                    except Exception:
+                        # Use the proper ImageConfig type if available
+                        if hasattr(types, 'ImageConfig'):
+                            config_params["image_config"] = types.ImageConfig(aspect_ratio=vertex_aspect)
+                        else:
+                            # Fallback to dictionary format for older SDK versions
+                            config_params["image_config"] = {"aspect_ratio": vertex_aspect}
+                    except Exception as e:
                         # If not supported, fall back to prompt-based approach
-                        log(f"[IMAGE GEN] Model không hỗ trợ image_config, sử dụng prompt hints")
+                        log(f"[IMAGE GEN] Model không hỗ trợ image_config ({e}), sử dụng prompt hints")
 
                 # Generate image using Gemini model
                 response = client.models.generate_content(
