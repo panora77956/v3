@@ -39,7 +39,17 @@ def _extract_image_from_response(data: dict) -> bytes:
             if mime_type.startswith("image/"):
                 b64_data = part["inline_data"].get("data", "")
                 if b64_data:
-                    return base64.b64decode(b64_data)
+                    image_bytes = base64.b64decode(b64_data)
+                    
+                    # Validate image size - a valid image should be at least 1KB
+                    MIN_VALID_IMAGE_SIZE = 1024  # 1KB
+                    if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
+                        raise ImageGenError(
+                            f"Image data too small ({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes), "
+                            f"likely an error response"
+                        )
+                    
+                    return image_bytes
 
     raise ImageGenError("No image data found in response")
 
@@ -153,6 +163,15 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                                     # Decode base64 image data
                                     import base64
                                     image_bytes = base64.b64decode(part.inline_data.data)
+                                    
+                                    # Validate image size - a valid image should be at least 1KB
+                                    # If it's too small (e.g., 65 bytes), it's likely an error response
+                                    MIN_VALID_IMAGE_SIZE = 1024  # 1KB
+                                    if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
+                                        log(f"[IMAGE GEN] ⚠️ Vertex AI trả về dữ liệu quá nhỏ ({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes)")
+                                        log(f"[IMAGE GEN] Dữ liệu có thể không phải ảnh hợp lệ, bỏ qua và thử AI Studio API")
+                                        return None
+                                    
                                     log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với Gemini ({len(image_bytes)} bytes)")
                                     return image_bytes
                 
@@ -172,7 +191,40 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
             log("[IMAGE GEN] Chạy: pip install google-genai>=0.3.0")
             return None
         except Exception as e:
-            log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
+            # Extract detailed error information for better debugging
+            error_msg = str(e)
+            
+            # Check if it's a rate limit error (429 RESOURCE_EXHAUSTED)
+            if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
+                # Try to extract error details from the exception
+                error_details = error_msg
+                
+                # Parse JSON error if available
+                import re
+                import json
+                
+                # Try to find JSON object with nested structure
+                # Look for pattern: {'error': {...}}
+                json_match = re.search(r'\{[\'"]error[\'"]\s*:\s*\{[^}]+\}\}', error_msg)
+                if json_match:
+                    try:
+                        # Replace single quotes with double quotes for valid JSON
+                        json_str = json_match.group(0).replace("'", '"')
+                        error_json = json.loads(json_str)
+                        if 'error' in error_json:
+                            error_info = error_json['error']
+                            code = error_info.get('code', 'N/A')
+                            status = error_info.get('status', 'N/A')
+                            message = error_info.get('message', 'N/A')
+                            error_details = f"{code} {status}. {error_json}"
+                    except Exception:
+                        # If JSON parsing fails, just use the original message
+                        pass
+                
+                log(f"[IMAGE GEN] Lỗi Vertex AI: {error_details}, chuyển sang AI Studio API")
+            else:
+                log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
+            
             return None
             
     except Exception as e:
