@@ -39,7 +39,17 @@ def _extract_image_from_response(data: dict) -> bytes:
             if mime_type.startswith("image/"):
                 b64_data = part["inline_data"].get("data", "")
                 if b64_data:
-                    return base64.b64decode(b64_data)
+                    image_bytes = base64.b64decode(b64_data)
+                    
+                    # Validate image size - a valid image should be at least 1KB
+                    MIN_VALID_IMAGE_SIZE = 1024  # 1KB
+                    if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
+                        raise ImageGenError(
+                            f"Image data too small ({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes), "
+                            f"likely an error response"
+                        )
+                    
+                    return image_bytes
 
     raise ImageGenError("No image data found in response")
 
