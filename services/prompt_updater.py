@@ -287,12 +287,10 @@ def generate_custom_prompts_code(custom_prompts: Dict[str, Dict[str, str]], shee
         topics = custom_prompts[domain]
         for topic in sorted(topics.keys()):
             prompt = topics[topic]
-            # For multi-line prompts, use triple quotes
+            # For multi-line prompts, use triple quotes (no extra newlines)
             # Escape any triple quotes in the prompt
             escaped_prompt = prompt.replace('"""', '\\"\\"\\"')
-            lines.append(f'    ("{domain}", "{topic}"): """')
-            lines.append(escaped_prompt)
-            lines.append('""",')
+            lines.append(f'    ("{domain}", "{topic}"): """{escaped_prompt}""",')
     
     lines.append('}')
     lines.append('')
