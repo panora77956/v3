@@ -183,13 +183,19 @@ def extract_location_context(scene_data):
     Returns:
         Formatted location context string or None
     """
+    # Helper to safely convert value to string (handles both str and list)
+    def safe_str(value):
+        if isinstance(value, list):
+            return "\n".join(str(item) for item in value)
+        return str(value) if value else ""
+    
     # First try: direct location field from LLM-generated scene
     location = scene_data.get("location", "").strip()
     if location:
         return location
 
     # Second try: parse scene header from screenplay text (if available)
-    screenplay = scene_data.get("screenplay_vi", "") or scene_data.get("screenplay_tgt", "")
+    screenplay = safe_str(scene_data.get("screenplay_vi", "")) or safe_str(scene_data.get("screenplay_tgt", ""))
     if screenplay:
         match = _SCREENPLAY_LOCATION_PATTERN.search(screenplay)
         if match:
@@ -1057,12 +1063,18 @@ class _Worker(QObject):
         dir_videos = os.path.join(prj_dir, "03_Videos"); os.makedirs(dir_videos, exist_ok=True)
 
         try:
+            # Helper to safely convert value to string (handles both str and list)
+            def safe_str(value):
+                if isinstance(value, list):
+                    return "\n".join(str(item) for item in value)
+                return str(value) if value else ""
+            
             with open(os.path.join(dir_script, "screenplay_vi.txt"), "w", encoding="utf-8") as f:
-                f.write(data.get("screenplay_vi",""))
+                f.write(safe_str(data.get("screenplay_vi","")))
             with open(os.path.join(dir_script, "screenplay_tgt.txt"), "w", encoding="utf-8") as f:
-                f.write(data.get("screenplay_tgt",""))
+                f.write(safe_str(data.get("screenplay_tgt","")))
             with open(os.path.join(dir_script, "outline_vi.txt"), "w", encoding="utf-8") as f:
-                f.write(data.get("outline_vi",""))
+                f.write(safe_str(data.get("outline_vi","")))
             with open(os.path.join(dir_script, "character_bible.json"), "w", encoding="utf-8") as f:
                 json.dump(data.get("character_bible",[]), f, ensure_ascii=False, indent=2)
             # Save voice config and domain/topic if present
