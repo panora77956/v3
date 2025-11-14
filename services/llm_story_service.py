@@ -2075,18 +2075,26 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
             progress_callback(msg, percent)
     
     target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
-    
-    # Check if a custom prompt exists for this domain/topic
-    # Custom prompts may have special requirements (e.g., no-character narration)
-    has_custom_prompt = False
+
+    # FIX: Detect requires_no_characters from custom prompt (same logic as parent function)
+    requires_no_characters = False
     if domain and topic:
         try:
             from services.domain_custom_prompts import get_custom_prompt
-            test_custom = get_custom_prompt(domain, topic)
-            has_custom_prompt = test_custom is not None
-        except ImportError:
+            custom_prompt = get_custom_prompt(domain, topic)
+
+            if custom_prompt:
+                custom_lower = custom_prompt.lower()
+                requires_no_characters = (
+                    "no character" in custom_lower or
+                    "không tạo nhân vật" in custom_lower or
+                    "cấm tạo nhân vật" in custom_lower or
+                    "character_bible = []" in custom_prompt or
+                    "character_bible=[]" in custom_prompt.replace(" ", "")
+                )
+        except Exception:
             pass
-    
+
     # Build context from previous scenes
     context = ""
     if previous_scenes:
@@ -2281,18 +2289,43 @@ def generate_script_scene_by_scene(idea, style, duration_seconds, provider='Gemi
     target_language = LANGUAGE_NAMES.get(output_lang, 'Vietnamese (Tiếng Việt)')
     
     report_progress(f"Tính toán: {n} cảnh cần tạo (total {duration_seconds}s)", 10)
-    
-    # Check if custom prompt exists
+
+    # FIX: Detect custom prompt and requires_no_characters automatically
+    # This matches the logic used in short video generation (_schema_prompt)
     custom_prompt = None
+    requires_no_characters = False
+
     if domain and topic:
         try:
             from services.domain_custom_prompts import get_custom_prompt
             custom_prompt = get_custom_prompt(domain, topic)
+
             if custom_prompt:
                 print(f"[INFO] Scene-by-scene using custom prompt for {domain}/{topic}")
+
+                # Detect no-character requirement from custom prompt CONTENT
+                # This is more flexible than hardcoding domain/topic combinations
+                custom_lower = custom_prompt.lower()
+                requires_no_characters = (
+                    "no character" in custom_lower or
+                    "không tạo nhân vật" in custom_lower or
+                    "cấm tạo nhân vật" in custom_lower or
+                    "character_bible = []" in custom_prompt or
+                    "character_bible=[]" in custom_prompt.replace(" ", "")
+                )
+
+                if requires_no_characters:
+                    print("[INFO] Detected no-character requirement from custom prompt content")
+                else:
+                    print("[INFO] Custom prompt allows characters")
+
         except ImportError:
+            print("[WARN] Could not import domain_custom_prompts module")
             pass
-    
+        except Exception as e:
+            print(f"[WARN] Error loading custom prompt: {e}")
+            pass
+
     # Step 1: Generate metadata (title, character bible, outline)
     report_progress("Đang tạo metadata (title, character bible, outline)...", 15)
     
