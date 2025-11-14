@@ -1026,10 +1026,11 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
         
         vertex_config = config.get('vertex_ai', {})
         
-        if vertex_config.get('enabled', False) and vertex_config.get('project_id'):
+        if vertex_config.get('enabled', False):
             try:
                 from services.vertex_ai_client import VertexAIClient
                 from services.core.api_config import VERTEX_AI_TEXT_MODEL
+                from services.vertex_service_account_manager import get_vertex_account_manager
                 
                 # Calculate appropriate timeout
                 if timeout is None:
@@ -1045,30 +1046,42 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     else:
                         timeout = 180
                 
-                # Use Vertex AI model if specified, otherwise use default
-                vertex_model = VERTEX_AI_TEXT_MODEL if model == "gemini-2.5-flash" else model
+                # Try to get service account from manager
+                account_mgr = get_vertex_account_manager()
+                account_mgr.load_from_config(config)
+                account = account_mgr.get_next_account()
                 
-                report_progress(f"Trying Vertex AI with model {vertex_model}...")
-                
-                vertex_client = VertexAIClient(
-                    model=vertex_model,
-                    project_id=vertex_config.get('project_id'),
-                    location=vertex_config.get('location', 'us-central1'),
-                    api_key=api_key,
-                    use_vertex=True
-                )
-                
-                # Generate content - VertexAIClient handles retries internally
-                result = vertex_client.generate_content(
-                    prompt=prompt,
-                    system_instruction="You are a professional AI assistant. Generate valid JSON output when requested.",
-                    temperature=0.9,
-                    timeout=timeout,
-                    max_retries=5
-                )
-                
-                report_progress("✓ Vertex AI generation successful")
-                return parse_llm_response_safe(result, "Vertex AI")
+                if not account:
+                    report_progress("[TEXT GEN] Không có Vertex AI service account khả dụng, sử dụng AI Studio API")
+                    # Continue to AI Studio fallback
+                else:
+                    report_progress(f"[TEXT GEN] Đang thử Vertex AI với account: {account.name}")
+                    
+                    # Use Vertex AI model if specified, otherwise use default
+                    vertex_model = VERTEX_AI_TEXT_MODEL if model == "gemini-2.5-flash" else model
+                    
+                    report_progress(f"Trying Vertex AI with model {vertex_model}...")
+                    
+                    vertex_client = VertexAIClient(
+                        model=vertex_model,
+                        project_id=account.project_id,
+                        location=account.location,
+                        api_key=api_key,
+                        use_vertex=True,
+                        credentials_json=account.credentials_json
+                    )
+                    
+                    # Generate content - VertexAIClient handles retries internally
+                    result = vertex_client.generate_content(
+                        prompt=prompt,
+                        system_instruction="You are a professional AI assistant. Generate valid JSON output when requested.",
+                        temperature=0.9,
+                        timeout=timeout,
+                        max_retries=5
+                    )
+                    
+                    report_progress("✓ Vertex AI generation successful")
+                    return parse_llm_response_safe(result, "Vertex AI")
                 
             except Exception as e:
                 report_progress(f"Vertex AI failed: {e}. Falling back to AI Studio API...")

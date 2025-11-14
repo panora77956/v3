@@ -75,8 +75,8 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
         # Try to use service account manager
         try:
             from services.vertex_service_account_manager import get_vertex_account_manager
-            from google import genai
-            from google.genai import types
+            import vertexai
+            from vertexai.preview.vision_models import ImageGenerationModel
             
             account_mgr = get_vertex_account_manager()
             account_mgr.load_from_config(config)
@@ -90,16 +90,11 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
             
             log(f"[IMAGE GEN] Đang thử Vertex AI với account: {account.name}")
             
-            # Set environment variables for Vertex AI
-            import os
-            os.environ['GOOGLE_GENAI_USE_VERTEXAI'] = 'true'
-            os.environ['GOOGLE_CLOUD_PROJECT'] = account.project_id
-            os.environ['GOOGLE_CLOUD_LOCATION'] = account.location
-            
             # Handle service account credentials if provided
+            import os
+            import tempfile
             temp_creds_file = None
             if account.credentials_json:
-                import tempfile
                 temp_creds_file = tempfile.NamedTemporaryFile(
                     mode='w',
                     suffix='.json',
@@ -110,12 +105,8 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
             
             try:
-                # Initialize Vertex AI client
-                client = genai.Client(
-                    vertexai=True,
-                    project=account.project_id,
-                    location=account.location
-                )
+                # Initialize Vertex AI
+                vertexai.init(project=account.project_id, location=account.location)
                 
                 # Map aspect ratio to Vertex AI format
                 vertex_aspect_ratio = "1:1"  # default
@@ -130,41 +121,57 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                 
                 log(f"[IMAGE GEN] Gọi Vertex AI Imagen với aspect ratio {vertex_aspect_ratio}...")
                 
+                # Load the image generation model
+                model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+                
                 # Generate image using Vertex AI
-                # Use imagen-3.0-generate-001 model for image generation
-                response = client.models.generate_images(
-                    model='imagen-3.0-generate-001',
+                response = model.generate_images(
                     prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio=vertex_aspect_ratio,
-                        safety_filter_level="block_some",
-                        person_generation="allow_adult"
-                    )
+                    number_of_images=1,
+                    aspect_ratio=vertex_aspect_ratio,
+                    safety_filter_level="block_some",
+                    person_generation="allow_adult"
                 )
                 
                 # Extract image bytes from response
-                if response.generated_images and len(response.generated_images) > 0:
-                    generated_image = response.generated_images[0]
+                if response.images and len(response.images) > 0:
+                    generated_image = response.images[0]
                     
-                    # Get image data
-                    if hasattr(generated_image, 'image') and hasattr(generated_image.image, '_image_bytes'):
-                        image_bytes = generated_image.image._image_bytes
+                    # Get image data - try multiple approaches
+                    try:
+                        # Approach 1: Direct _image_bytes access
+                        if hasattr(generated_image, '_image_bytes'):
+                            image_bytes = generated_image._image_bytes
+                            log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
+                            return image_bytes
+                    except Exception:
+                        pass
+                    
+                    try:
+                        # Approach 2: PIL Image conversion
+                        if hasattr(generated_image, '_pil_image'):
+                            from io import BytesIO
+                            buffer = BytesIO()
+                            generated_image._pil_image.save(buffer, format='PNG')
+                            image_bytes = buffer.getvalue()
+                            log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
+                            return image_bytes
+                    except Exception:
+                        pass
+                    
+                    try:
+                        # Approach 3: Save to temp file and read back
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                            tmp_path = tmp.name
+                        generated_image.save(tmp_path)
+                        with open(tmp_path, 'rb') as f:
+                            image_bytes = f.read()
+                        os.unlink(tmp_path)
                         log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
                         return image_bytes
-                    elif hasattr(generated_image, 'image'):
-                        # Try to get bytes from PIL Image if available
-                        try:
-                            from io import BytesIO
-                            img = generated_image.image
-                            if hasattr(img, 'save'):
-                                buffer = BytesIO()
-                                img.save(buffer, format='PNG')
-                                image_bytes = buffer.getvalue()
-                                log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công ({len(image_bytes)} bytes)")
-                                return image_bytes
-                        except Exception as e:
-                            log(f"[IMAGE GEN] Lỗi khi chuyển đổi PIL Image: {e}")
+                    except Exception as e:
+                        log(f"[IMAGE GEN] Lỗi khi lưu/đọc ảnh: {e}")
                 
                 log("[IMAGE GEN] Vertex AI không trả về ảnh")
                 return None
