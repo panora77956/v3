@@ -1526,6 +1526,9 @@ class VideoBanHangV5(QWidget):
         """Auto workflow - 3 steps"""
         self._append_log("⚡ Bắt đầu quy trình tự động (3 bước)...")
 
+        # Set flag to track auto workflow mode
+        self._auto_workflow_active = True
+        
         self.btn_auto.setEnabled(False)
         self.btn_script.setEnabled(False)
         self.btn_images.setEnabled(False)
@@ -1638,9 +1641,19 @@ class VideoBanHangV5(QWidget):
                 self._append_log(f"✅ Hoàn tất tạo kịch bản: {script_end_time.strftime('%H:%M:%S')} (Thời gian: {int(duration//60)}m {int(duration%60)}s)")
 
             self.btn_images.setEnabled(True)
+            
+            # Auto workflow - continue to step 2 (images)
+            if hasattr(self, '_auto_workflow_active') and self._auto_workflow_active:
+                self._append_log("🎨 Bước 2/3: Tạo ảnh...")
+                # Use QTimer to allow UI to update before starting next step
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(500, self._on_generate_images)
 
         except Exception as e:
             self._append_log(f"❌ Lỗi: {e}")
+            # Reset auto workflow flag on error
+            if hasattr(self, '_auto_workflow_active'):
+                self._auto_workflow_active = False
         finally:
             self.btn_script.setEnabled(True)
             self.btn_script.setText("📝 Viết kịch bản")
@@ -1743,6 +1756,11 @@ class VideoBanHangV5(QWidget):
         self.btn_script.setEnabled(True)
         self.btn_script.setText("📝 Viết kịch bản")
         self.btn_stop.setEnabled(False)
+        
+        # Reset auto workflow flag and re-enable auto button on error
+        if hasattr(self, '_auto_workflow_active') and self._auto_workflow_active:
+            self._auto_workflow_active = False
+            self.btn_auto.setEnabled(True)
 
     def _display_scene_cards(self, scenes):
         """Display scene cards"""
@@ -1857,8 +1875,18 @@ class VideoBanHangV5(QWidget):
             else:
                 self._append_log("✓ Hoàn tất tạo ảnh")
             self.btn_video.setEnabled(True)
+            
+            # Auto workflow - continue to step 3 (video)
+            if hasattr(self, '_auto_workflow_active') and self._auto_workflow_active:
+                self._append_log("🎬 Bước 3/3: Tạo video...")
+                # Use QTimer to allow UI to update before starting next step
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(500, self._on_generate_video)
         else:
             self._append_log("❌ Có lỗi khi tạo ảnh")
+            # Reset auto workflow flag on error
+            if hasattr(self, '_auto_workflow_active'):
+                self._auto_workflow_active = False
 
         self.btn_images.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -2092,6 +2120,14 @@ class VideoBanHangV5(QWidget):
         self.btn_script.setEnabled(True)
         self.btn_images.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        
+        # Reset auto workflow flag and re-enable auto button
+        if hasattr(self, '_auto_workflow_active') and self._auto_workflow_active:
+            self._auto_workflow_active = False
+            self.btn_auto.setEnabled(True)
+            self._append_log("✅ Hoàn tất quy trình tự động 3 bước!")
+        else:
+            self.btn_auto.setEnabled(True)
 
         # Save to history
         self._save_to_history(video_count=self._completed_scenes_count)
