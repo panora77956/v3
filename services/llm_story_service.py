@@ -362,11 +362,17 @@ def parse_llm_response_safe(response_text: str, source: str = "LLM") -> Dict[str
     if not response_text or not response_text.strip():
         raise ValueError(f"Empty response from {source}")
 
-    # Strategy 1: Direct JSON parse
+    # Strategy 1: Direct JSON parse (with escape fix fallback)
     try:
         return json.loads(response_text)
     except json.JSONDecodeError as e:
         print(f"[DEBUG] {source} Strategy 1 failed (direct parse): {e}")
+        # Strategy 1b: Try with escape fixes for unterminated strings
+        try:
+            escaped = _escape_unescaped_strings(response_text)
+            return json.loads(escaped)
+        except json.JSONDecodeError as e2:
+            print(f"[DEBUG] {source} Strategy 1b failed (direct parse with escapes): {e2}")
 
     # Strategy 2: Fix truncated JSON (auto-complete unclosed structures)
     try:

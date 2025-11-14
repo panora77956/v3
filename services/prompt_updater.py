@@ -42,7 +42,7 @@ def extract_sheet_info(sheet_url: str) -> Tuple[str, str, str]:
         return "", "", f"Lỗi khi parse URL: {str(e)}"
 
 
-def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str, str]], str]:
+def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, str]], str]:
     """
     Fetch system prompts from Google Sheets CSV export
     
@@ -50,7 +50,10 @@ def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str
         sheet_url: Custom Google Sheets URL (optional, uses default if None)
     
     Returns:
-        Tuple of (prompts_dict, error_message)
+        Tuple of (regular_prompts_dict, custom_prompts_dict, error_message)
+        - regular_prompts_dict: Regular domain prompts
+        - custom_prompts_dict: Custom prompts (with special formatting)
+        - error_message: Error message if failed, empty string if successful
     """
     # Use default URL if not provided
     if sheet_url is None:
@@ -59,7 +62,7 @@ def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str
     # Extract sheet ID and gid from URL
     sheet_id, gid, error = extract_sheet_info(sheet_url)
     if error:
-        return {}, error
+        return {}, {}, error
 
     # Build CSV export URL
     csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
@@ -73,39 +76,46 @@ def fetch_prompts_from_sheets(sheet_url: str = None) -> Tuple[Dict[str, Dict[str
         csv_content = response.content.decode('utf-8')
         csv_reader = csv.DictReader(io.StringIO(csv_content))
 
-        # Build nested dictionary
-        prompts = {}
+        # Build nested dictionaries for regular and custom prompts
+        regular_prompts = {}
+        custom_prompts = {}
         row_count = 0
 
         for row in csv_reader:
             domain = row.get('Domain', '').strip()
             topic = row.get('Topic', '').strip()
             system_prompt = row.get('System Prompt', '').strip()
+            prompt_type = row.get('Type', '').strip().lower()  # New column: "Type" (custom/regular)
 
             # Skip empty rows
             if not domain or not topic or not system_prompt:
                 continue
 
-            # Add to nested dict
-            if domain not in prompts:
-                prompts[domain] = {}
+            # Determine which dictionary to use based on Type column
+            # If Type column is "custom", add to custom_prompts, otherwise add to regular_prompts
+            is_custom = (prompt_type == 'custom')
+            target_dict = custom_prompts if is_custom else regular_prompts
 
-            prompts[domain][topic] = system_prompt
+            # Add to nested dict
+            if domain not in target_dict:
+                target_dict[domain] = {}
+
+            target_dict[domain][topic] = system_prompt
             row_count += 1
 
         if row_count == 0:
-            return {}, "Không tìm thấy dữ liệu hợp lệ trong CSV"
+            return {}, {}, "Không tìm thấy dữ liệu hợp lệ trong CSV"
 
-        return prompts, ""
+        return regular_prompts, custom_prompts, ""
 
     except requests.exceptions.Timeout:
-        return {}, "Timeout - vui lòng kiểm tra kết nối internet"
+        return {}, {}, "Timeout - vui lòng kiểm tra kết nối internet"
 
     except requests.exceptions.RequestException as e:
-        return {}, f"Lỗi mạng: {str(e)}"
+        return {}, {}, f"Lỗi mạng: {str(e)}"
 
     except Exception as e:
-        return {}, f"Lỗi không xác định: {str(e)}"
+        return {}, {}, f"Lỗi không xác định: {str(e)}"
 
 
 def generate_prompts_code(prompts: Dict[str, Dict[str, str]], sheet_url: str = None) -> str:
@@ -243,6 +253,69 @@ def generate_prompts_code(prompts: Dict[str, Dict[str, str]], sheet_url: str = N
     return '\n'.join(lines)
 
 
+def generate_custom_prompts_code(custom_prompts: Dict[str, Dict[str, str]], sheet_url: str = None) -> str:
+    """
+    Generate Python code for domain_custom_prompts.py from custom prompts dictionary
+    
+    Args:
+        custom_prompts: Nested dict with structure {domain: {topic: system_prompt}}
+        sheet_url: Google Sheets URL for documentation (optional)
+    
+    Returns:
+        Complete Python code for domain_custom_prompts.py
+    """
+    # Use default URL if not provided
+    if sheet_url is None:
+        sheet_url = DEFAULT_SHEETS_URL
+
+    lines = [
+        '# -*- coding: utf-8 -*-',
+        '"""',
+        'Custom system prompts for specific domain+topic combinations',
+        '',
+        'This module provides custom system prompts that override the default prompts',
+        'in llm_story_service.py for specific domain/topic combinations.',
+        f'Auto-generated from Google Sheet: {sheet_url}',
+        '"""',
+        '',
+        '# Custom system prompts for domain-specific script generation',
+        'CUSTOM_PROMPTS = {'
+    ]
+
+    # Sort domains for consistent output
+    for domain in sorted(custom_prompts.keys()):
+        topics = custom_prompts[domain]
+        for topic in sorted(topics.keys()):
+            prompt = topics[topic]
+            # For multi-line prompts, use triple quotes
+            # Escape any triple quotes in the prompt
+            escaped_prompt = prompt.replace('"""', '\\"\\"\\"')
+            lines.append(f'    ("{domain}", "{topic}"): """')
+            lines.append(escaped_prompt)
+            lines.append('""",')
+    
+    lines.append('}')
+    lines.append('')
+    lines.append('')
+
+    # Add utility function
+    lines.append('def get_custom_prompt(domain: str, topic: str) -> str:')
+    lines.append('    """')
+    lines.append('    Get custom system prompt for specific domain+topic combination')
+    lines.append('    ')
+    lines.append('    Args:')
+    lines.append('        domain: Domain name (e.g., "KHOA HỌC GIÁO DỤC")')
+    lines.append('        topic: Topic name (e.g., "PANORA - Nhà Tường thuật Khoa học")')
+    lines.append('    ')
+    lines.append('    Returns:')
+    lines.append('        Custom prompt string or None if not found')
+    lines.append('    """')
+    lines.append('    return CUSTOM_PROMPTS.get((domain, topic))')
+    lines.append('')
+
+    return '\n'.join(lines)
+
+
 def update_prompts_file(file_path: str, sheet_url: str = None) -> Tuple[bool, str]:
     """
     Update domain_prompts.py file with latest data from Google Sheets
@@ -254,25 +327,39 @@ def update_prompts_file(file_path: str, sheet_url: str = None) -> Tuple[bool, st
     Returns:
         Tuple of (success, message)
     """
-    # Fetch prompts
-    prompts, error = fetch_prompts_from_sheets(sheet_url)
+    # Fetch prompts (both regular and custom)
+    regular_prompts, custom_prompts, error = fetch_prompts_from_sheets(sheet_url)
 
     if error:
         return False, error
 
-    # Generate new code
-    new_code = generate_prompts_code(prompts, sheet_url)
+    # Generate new code for regular prompts
+    new_code = generate_prompts_code(regular_prompts, sheet_url)
 
-    # Write to file
+    # Write regular prompts to file
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_code)
 
         # Count domains and topics
-        domain_count = len(prompts)
-        topic_count = sum(len(topics) for topics in prompts.values())
+        regular_domain_count = len(regular_prompts)
+        regular_topic_count = sum(len(topics) for topics in regular_prompts.values())
 
-        return True, f"Cập nhật thành công! {domain_count} domains, {topic_count} topics"
+        # Also update custom prompts file if there are custom prompts
+        custom_message = ""
+        if custom_prompts:
+            import os
+            custom_file_path = os.path.join(os.path.dirname(file_path), 'domain_custom_prompts.py')
+            custom_code = generate_custom_prompts_code(custom_prompts, sheet_url)
+            
+            with open(custom_file_path, 'w', encoding='utf-8') as f:
+                f.write(custom_code)
+            
+            custom_domain_count = len(custom_prompts)
+            custom_topic_count = sum(len(topics) for topics in custom_prompts.values())
+            custom_message = f", {custom_topic_count} custom prompts"
+
+        return True, f"Cập nhật thành công! {regular_domain_count} domains, {regular_topic_count} regular topics{custom_message}"
 
     except Exception as e:
         return False, f"Lỗi khi ghi file: {str(e)}"
@@ -280,10 +367,15 @@ def update_prompts_file(file_path: str, sheet_url: str = None) -> Tuple[bool, st
 
 if __name__ == "__main__":
     # Test fetching
-    prompts, error = fetch_prompts_from_sheets()
+    regular_prompts, custom_prompts, error = fetch_prompts_from_sheets()
     if error:
         print(f"Error: {error}")
     else:
-        print(f"Success! Fetched {len(prompts)} domains")
-        for domain, topics in prompts.items():
+        print(f"Success! Fetched {len(regular_prompts)} regular domains, {len(custom_prompts)} custom domains")
+        print("\nRegular prompts:")
+        for domain, topics in regular_prompts.items():
             print(f"  - {domain}: {len(topics)} topics")
+        if custom_prompts:
+            print("\nCustom prompts:")
+            for domain, topics in custom_prompts.items():
+                print(f"  - {domain}: {len(topics)} topics")
