@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-import base64, requests, time
+import base64
+import time
 from typing import Optional
-from services.core.api_config import gemini_image_endpoint, IMAGE_GEN_TIMEOUT, VERTEX_AI_IMAGE_MODEL
+
+import requests
+
+from services.core.api_config import IMAGE_GEN_TIMEOUT, VERTEX_AI_IMAGE_MODEL, gemini_image_endpoint
+from services.core.api_key_rotator import APIKeyRotationError, APIKeyRotator
 from services.core.key_manager import get_all_keys, refresh
-from services.core.api_key_rotator import APIKeyRotator, APIKeyRotationError
 
 
 class ImageGenError(Exception):
@@ -40,7 +44,7 @@ def _extract_image_from_response(data: dict) -> bytes:
                 b64_data = part["inline_data"].get("data", "")
                 if b64_data:
                     image_bytes = base64.b64decode(b64_data)
-                    
+
                     # Validate image size - a valid image should be at least 1KB
                     MIN_VALID_IMAGE_SIZE = 1024  # 1KB
                     if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
@@ -48,7 +52,7 @@ def _extract_image_from_response(data: dict) -> bytes:
                             f"Image data too small ({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes), "
                             f"likely an error response"
                         )
-                    
+
                     return image_bytes
 
     raise ImageGenError("No image data found in response")
@@ -69,37 +73,38 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
     def log(msg):
         if log_fn:
             log_fn(msg)
-    
+
     try:
         # Load config to check if Vertex AI is enabled
         from utils import config as cfg
         config = cfg.load()
-        
+
         vertex_config = config.get('vertex_ai', {})
-        
+
         # Check if Vertex AI is enabled
         if not vertex_config.get('enabled', False):
             # Vertex AI is disabled - this is not an error, just use AI Studio API
             return None
-        
+
         # Vertex AI is enabled, now try to import required modules
         try:
-            from services.vertex_service_account_manager import get_vertex_account_manager
             from google import genai
             from google.genai import types
-            
+
+            from services.vertex_service_account_manager import get_vertex_account_manager
+
             account_mgr = get_vertex_account_manager()
             account_mgr.load_from_config(config)
-            
+
             # Get next enabled account
             account = account_mgr.get_next_account()
-            
+
             if not account:
                 log("[IMAGE GEN] Không có Vertex AI service account khả dụng")
                 return None
-            
+
             log(f"[IMAGE GEN] Đang thử Vertex AI với account: {account.name}")
-            
+
             # Handle service account credentials if provided
             import os
             import tempfile
@@ -113,22 +118,22 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                 temp_creds_file.write(account.credentials_json)
                 temp_creds_file.close()
                 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_creds_file.name
-            
+
             try:
                 # Initialize Vertex AI client using google-genai SDK
-                log(f"[IMAGE GEN] Khởi tạo Vertex AI client với Gemini model...")
-                
+                log("[IMAGE GEN] Khởi tạo Vertex AI client với Gemini model...")
+
                 client = genai.Client(
                     vertexai=True,
                     project=account.project_id,
                     location=account.location
                 )
-                
+
                 # Use configured Vertex AI image model (gemini-2.5-flash-image)
                 model_name = VERTEX_AI_IMAGE_MODEL
-                
+
                 log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")
-                
+
                 # Add aspect ratio hint to prompt for better results
                 aspect_hint = ""
                 if aspect_ratio and aspect_ratio != "1:1":
@@ -136,9 +141,9 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                         aspect_hint = " (portrait orientation, vertical format)"
                     elif aspect_ratio in ("16:9", "21:9"):
                         aspect_hint = " (landscape orientation, horizontal format)"
-                
+
                 enhanced_prompt = prompt + aspect_hint if aspect_hint else prompt
-                
+
                 # Generate image using Gemini model
                 response = client.models.generate_content(
                     model=model_name,
@@ -149,7 +154,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                         top_p=0.95,
                     )
                 )
-                
+
                 # Extract image bytes from response
                 if hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
@@ -160,24 +165,46 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                             if hasattr(part, 'inline_data'):
                                 mime_type = part.inline_data.mime_type
                                 if mime_type and mime_type.startswith('image/'):
-                                    # Decode base64 image data
+                                    # The data format depends on the SDK version and API used:
+                                    # - Vertex AI: returns raw bytes directly
+                                    # - AI Studio: returns base64-encoded string
                                     import base64
-                                    image_bytes = base64.b64decode(part.inline_data.data)
-                                    
+
+                                    data = part.inline_data.data
+
+                                    # Check if data is already bytes or needs decoding
+                                    if isinstance(data, bytes):
+                                        # Already in bytes format (Vertex AI)
+                                        image_bytes = data
+                                    else:
+                                        # Need to decode from base64 string (AI Studio)
+                                        image_bytes = base64.b64decode(data)
+
                                     # Validate image size - a valid image should be at least 1KB
-                                    # If it's too small (e.g., 65 bytes), it's likely an error response
+                                    # If too small (e.g., 65 bytes), it's likely an error
                                     MIN_VALID_IMAGE_SIZE = 1024  # 1KB
                                     if len(image_bytes) < MIN_VALID_IMAGE_SIZE:
-                                        log(f"[IMAGE GEN] ⚠️ Vertex AI trả về dữ liệu quá nhỏ ({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes)")
-                                        log(f"[IMAGE GEN] Dữ liệu có thể không phải ảnh hợp lệ, bỏ qua và thử AI Studio API")
+                                        size_msg = (
+                                            f"[IMAGE GEN] ⚠️ Vertex AI trả về dữ liệu quá nhỏ "
+                                            f"({len(image_bytes)} bytes < {MIN_VALID_IMAGE_SIZE} bytes)"
+                                        )
+                                        log(size_msg)
+                                        log(
+                                            "[IMAGE GEN] Dữ liệu có thể không phải ảnh hợp lệ, "
+                                            "bỏ qua và thử AI Studio API"
+                                        )
                                         return None
-                                    
-                                    log(f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với Gemini ({len(image_bytes)} bytes)")
+
+                                    success_msg = (
+                                        f"[IMAGE GEN] ✓ Vertex AI tạo ảnh thành công với Gemini "
+                                        f"({len(image_bytes)} bytes)"
+                                    )
+                                    log(success_msg)
                                     return image_bytes
-                
+
                 log("[IMAGE GEN] Vertex AI không trả về ảnh")
                 return None
-                
+
             finally:
                 # Clean up temp credentials file
                 if temp_creds_file:
@@ -185,7 +212,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                         os.unlink(temp_creds_file.name)
                     except Exception:
                         pass
-                
+
         except ImportError as ie:
             log(f"[IMAGE GEN] Vertex AI được bật nhưng thiếu dependencies: {ie}")
             log("[IMAGE GEN] Chạy: pip install google-genai>=0.3.0")
@@ -193,16 +220,16 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
         except Exception as e:
             # Extract detailed error information for better debugging
             error_msg = str(e)
-            
+
             # Check if it's a rate limit error (429 RESOURCE_EXHAUSTED)
             if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
                 # Try to extract error details from the exception
                 error_details = error_msg
-                
+
                 # Parse JSON error if available
-                import re
                 import json
-                
+                import re
+
                 # Try to find JSON object with nested structure
                 # Look for pattern: {'error': {...}}
                 json_match = re.search(r'\{[\'"]error[\'"]\s*:\s*\{[^}]+\}\}', error_msg)
@@ -220,13 +247,13 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                     except Exception:
                         # If JSON parsing fails, just use the original message
                         pass
-                
+
                 log(f"[IMAGE GEN] Lỗi Vertex AI: {error_details}, chuyển sang AI Studio API")
             else:
                 log(f"[IMAGE GEN] Lỗi Vertex AI: {e}, chuyển sang AI Studio API")
-            
+
             return None
-            
+
     except Exception as e:
         log(f"[IMAGE GEN] Lỗi khi kiểm tra Vertex AI: {e}")
         return None
@@ -365,10 +392,10 @@ def generate_image_with_rate_limit(
     # Support both 'prompt' and 'text' parameter names for backward compatibility
     if prompt is None and text is None:
         raise ValueError("Either 'prompt' or 'text' parameter is required")
-    
+
     # Use whichever is provided, preferring 'prompt' if both are given
     actual_prompt = prompt if prompt is not None else text
-    
+
     # Support both logger and log_callback parameter names
     log_fn = logger or log_callback
 
@@ -400,7 +427,7 @@ def generate_image_with_rate_limit(
     try:
         if model.lower() in ("gemini", "imagen_4"):
             log(f"[IMAGE GEN] Tạo ảnh với {model}...")
-            
+
             # Try Vertex AI first if enabled
             vertex_result = _try_vertex_ai_image_generation(
                 prompt=actual_prompt,
@@ -462,7 +489,7 @@ def generate_image_with_rate_limit(
                 if 'rate limit' in error_msg or '429' in error_msg or 'quota' in error_msg:
                     log("[RATE LIMIT] All Gemini API keys are rate limited!")
                     log("[INFO] Attempting fallback to Whisk API...")
-                    
+
                     # Try Whisk as fallback if reference images are available
                     if reference_images and len(reference_images) > 0:
                         try:
@@ -482,12 +509,12 @@ def generate_image_with_rate_limit(
                             log(f"[ERROR] Whisk fallback failed: {str(whisk_err)[:100]}")
                     else:
                         log("[SKIP] Whisk requires reference images (not provided)")
-                
+
                 # Re-raise the original error if Whisk fallback didn't work
                 raise
 
         elif model.lower() == "dalle":
-            log(f"[IMAGE GEN] Tạo ảnh với DALL-E...")
+            log("[IMAGE GEN] Tạo ảnh với DALL-E...")
             # Import DALL-E client if available
             try:
                 from services.openai.dalle_client import generate_image
@@ -495,17 +522,17 @@ def generate_image_with_rate_limit(
             except ImportError:
                 log("[ERROR] DALL-E client không khả dụng")
                 return None
-        
+
         elif model.lower() == "whisk":
-            log(f"[IMAGE GEN] Tạo ảnh với Whisk...")
+            log("[IMAGE GEN] Tạo ảnh với Whisk...")
             # Whisk requires reference images
             if not reference_images or len(reference_images) == 0:
                 log("[ERROR] Whisk requires reference images (model_paths/prod_paths)")
                 return None
-            
+
             try:
                 from services import whisk_service
-                
+
                 # Convert aspect ratio to Whisk format
                 whisk_aspect_ratio = "IMAGE_ASPECT_RATIO_PORTRAIT"
                 if aspect_ratio:
@@ -515,7 +542,7 @@ def generate_image_with_rate_limit(
                         whisk_aspect_ratio = "IMAGE_ASPECT_RATIO_LANDSCAPE"
                     elif aspect_ratio == "1:1":
                         whisk_aspect_ratio = "IMAGE_ASPECT_RATIO_SQUARE"
-                
+
                 result = whisk_service.generate_image(
                     prompt=actual_prompt,
                     model_image=reference_images[0] if len(reference_images) > 0 else None,
@@ -523,21 +550,21 @@ def generate_image_with_rate_limit(
                     aspect_ratio=whisk_aspect_ratio,
                     debug_callback=log_fn
                 )
-                
+
                 if result:
                     log("[SUCCESS] Whisk generation complete!")
                     return result
                 else:
                     log("[ERROR] Whisk returned no data")
                     return None
-                    
+
             except ImportError:
                 log("[ERROR] Whisk service không khả dụng")
                 return None
             except Exception as e:
                 log(f"[ERROR] Whisk generation failed: {str(e)[:100]}")
                 return None
-        
+
         else:
             log(f"[ERROR] Unsupported model: {model}")
             return None
