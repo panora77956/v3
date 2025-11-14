@@ -2868,6 +2868,59 @@ class Text2VideoPanelV5(QWidget):
         """Handle topic selection"""
         pass  # Preview removed
 
+    def reload_prompts(self):
+        """Reload domain prompts from disk and refresh UI dropdowns"""
+        try:
+            import importlib
+            import sys
+            
+            # Reload domain_prompts module
+            if 'services.domain_prompts' in sys.modules:
+                importlib.reload(sys.modules['services.domain_prompts'])
+                self._append_log("[INFO] ✓ Đã reload domain prompts")
+            
+            # Reload domain_custom_prompts module (if exists)
+            if 'services.domain_custom_prompts' in sys.modules:
+                importlib.reload(sys.modules['services.domain_custom_prompts'])
+                self._append_log("[INFO] ✓ Đã reload custom prompts")
+            
+            # Re-import functions
+            from services.domain_prompts import get_all_domains, get_topics_for_domain
+            
+            # Save current selections
+            current_domain = self.cb_domain.currentData()
+            current_topic = self.cb_topic.currentData()
+            
+            # Reload domain dropdown
+            self.cb_domain.blockSignals(True)
+            self.cb_domain.clear()
+            self.cb_domain.addItem("(Không chọn)", "")
+            
+            if get_all_domains:
+                for domain in get_all_domains():
+                    self.cb_domain.addItem(domain, domain)
+            
+            self.cb_domain.blockSignals(False)
+            
+            # Restore selections if possible
+            if current_domain:
+                index = self.cb_domain.findData(current_domain)
+                if index >= 0:
+                    self.cb_domain.setCurrentIndex(index)
+                    # Reload topics for domain
+                    self._on_domain_changed()
+                    
+                    # Restore topic selection
+                    if current_topic:
+                        topic_index = self.cb_topic.findData(current_topic)
+                        if topic_index >= 0:
+                            self.cb_topic.setCurrentIndex(topic_index)
+            
+            self._append_log("[INFO] ✅ Đã cập nhật danh sách lĩnh vực và chủ đề")
+            
+        except Exception as e:
+            self._append_log(f"[ERR] Lỗi khi reload prompts: {e}")
+
     def _load_voices_for_provider(self):
         """BUG FIX #3: Load voices for selected provider and language"""
         try:

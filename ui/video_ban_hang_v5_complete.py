@@ -1261,6 +1261,63 @@ class VideoBanHangV5(QWidget):
             if topics:
                 self.cb_topic.addItems(topics)
 
+    def reload_prompts(self):
+        """Reload domain prompts from disk and refresh UI dropdowns"""
+        try:
+            import importlib
+            import sys
+            from services import domain_prompts as dp_module
+            
+            # Reload domain_prompts module
+            if 'services.domain_prompts' in sys.modules:
+                importlib.reload(sys.modules['services.domain_prompts'])
+                print("[VideoBanHang] ✓ Đã reload domain prompts")
+            
+            # Reload domain_custom_prompts module (if exists)
+            if 'services.domain_custom_prompts' in sys.modules:
+                importlib.reload(sys.modules['services.domain_custom_prompts'])
+                print("[VideoBanHang] ✓ Đã reload custom prompts")
+            
+            # Re-import the module at module level
+            global domain_prompts
+            from services import domain_prompts
+            
+            # Save current selections
+            current_domain = self.cb_domain.currentText()
+            current_topic = self.cb_topic.currentText()
+            
+            # Reload domain dropdown
+            self.cb_domain.blockSignals(True)
+            self.cb_domain.clear()
+            self.cb_domain.addItem("(Không chọn)")
+            
+            if domain_prompts:
+                domains = domain_prompts.get_all_domains()
+                if domains:
+                    self.cb_domain.addItems(domains)
+            
+            self.cb_domain.blockSignals(False)
+            
+            # Restore selections if possible
+            if current_domain and current_domain != "(Không chọn)":
+                index = self.cb_domain.findText(current_domain)
+                if index >= 0:
+                    self.cb_domain.setCurrentIndex(index)
+                    # This will trigger _on_domain_changed which reloads topics
+                    
+                    # Restore topic selection
+                    if current_topic and current_topic != "(Không chọn)":
+                        topic_index = self.cb_topic.findText(current_topic)
+                        if topic_index >= 0:
+                            self.cb_topic.setCurrentIndex(topic_index)
+            
+            print("[VideoBanHang] ✅ Đã cập nhật danh sách lĩnh vực và chủ đề")
+            
+        except Exception as e:
+            print(f"[VideoBanHang] ❌ Lỗi khi reload prompts: {e}")
+            import traceback
+            traceback.print_exc()
+
     def _on_section_toggled(self, toggled_section, checked):
         """Handle section toggle - accordion behavior"""
         container = None
