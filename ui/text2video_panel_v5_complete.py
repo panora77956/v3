@@ -2291,54 +2291,62 @@ class Text2VideoPanelV5(QWidget):
 
     def _on_job_card(self, data: dict):
         """Update job card with video status"""
-        scene = int(data.get('scene', 0) or 0)
-        copy = int(data.get('copy', 0) or 0)
-        if scene <= 0 or copy <= 0:
-            return
+        try:
+            scene = int(data.get('scene', 0) or 0)
+            copy = int(data.get('copy', 0) or 0)
+            if scene <= 0 or copy <= 0:
+                return
 
-        st = self._cards_state.setdefault(scene, {
-            'vi': '', 'tgt': '', 'thumb': '', 'videos': {}
-        })
-        v = st['videos'].setdefault(copy, {})
+            st = self._cards_state.setdefault(scene, {
+                'vi': '', 'tgt': '', 'thumb': '', 'videos': {}
+            })
+            v = st['videos'].setdefault(copy, {})
 
-        # Track download completion
-        was_downloaded = v.get('status') == 'DOWNLOADED'
+            # Track download completion
+            was_downloaded = v.get('status') == 'DOWNLOADED'
 
-        for k in ('status', 'url', 'path', 'thumb', 'completed_at'):
-            if data.get(k):
-                v[k] = data.get(k)
+            for k in ('status', 'url', 'path', 'thumb', 'completed_at'):
+                if data.get(k):
+                    v[k] = data.get(k)
 
-        # Log when video is downloaded
-        if not was_downloaded and v.get('status') == 'DOWNLOADED' and v.get('path'):
-            self._append_log(f"✓ Video cảnh {scene} đã tải về: {v['path']}")
+            # Log when video is downloaded
+            if not was_downloaded and v.get('status') == 'DOWNLOADED' and v.get('path'):
+                self._append_log(f"✓ Video cảnh {scene} đã tải về: {v['path']}")
 
-        if data.get('thumb') and os.path.isfile(data['thumb']):
-            st['thumb'] = data['thumb']
+            if data.get('thumb') and os.path.isfile(data['thumb']):
+                st['thumb'] = data['thumb']
 
-        # Update SceneResultCard if available
-        if SceneResultCard and scene <= len(self.scene_cards):
-            card = self.scene_cards[scene - 1]
-            if st.get('thumb') and os.path.isfile(st['thumb']):
-                card.set_image_path(st['thumb'])
-
-        for i in range(self.cards.count()):
-            it = self.cards.item(i)
-            role = it.data(Qt.UserRole)
-            if isinstance(role, tuple) and role == ('scene', scene):
-                it.setText(self._render_card_text(scene))
-
+            # Update SceneResultCard if available
+            if SceneResultCard and scene <= len(self.scene_cards):
+                card = self.scene_cards[scene - 1]
                 if st.get('thumb') and os.path.isfile(st['thumb']):
-                    pix = QPixmap(st['thumb']).scaled(
-                        self.cards.iconSize(),
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-                    it.setIcon(QIcon(pix))
+                    card.set_image_path(st['thumb'])
 
-                col = self._t2v_status_color(v.get('status'))
-                if col:
-                    it.setBackground(col)
-                break
+            for i in range(self.cards.count()):
+                it = self.cards.item(i)
+                role = it.data(Qt.UserRole)
+                if isinstance(role, tuple) and role == ('scene', scene):
+                    it.setText(self._render_card_text(scene))
+
+                    if st.get('thumb') and os.path.isfile(st['thumb']):
+                        pix = QPixmap(st['thumb']).scaled(
+                            self.cards.iconSize(),
+                            Qt.KeepAspectRatio,
+                            Qt.SmoothTransformation
+                        )
+                        it.setIcon(QIcon(pix))
+
+                    col = self._t2v_status_color(v.get('status'))
+                    if col:
+                        it.setBackground(col)
+                    break
+        except KeyboardInterrupt:
+            # Gracefully handle Ctrl+C interruption
+            self._append_log("[INFO] Đã nhận tín hiệu dừng từ người dùng")
+            raise
+        except Exception as e:
+            # Log other errors but don't crash the application
+            self._append_log(f"[WARN] Lỗi khi cập nhật job card: {e}")
 
     def _t2v_status_color(self, status):
         """Get color for video status"""
