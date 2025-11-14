@@ -1463,10 +1463,38 @@ class VideoBanHangV5(QWidget):
         self._append_log("🔄 Đang tạo lại Character Bible...")
 
         try:
+            import json
             from services.google.character_bible import create_character_bible, format_character_bible_for_display
 
             outline = self.cache["outline"]
-            script_json = outline.get("script_json", {})
+            
+            # Parse script_json - handle both string and dict
+            script_json_raw = outline.get("script_json", {})
+            if isinstance(script_json_raw, str):
+                try:
+                    # Try to parse as JSON
+                    script_json = json.loads(script_json_raw)
+                except json.JSONDecodeError:
+                    # Not JSON - cannot extract character bible from plain text
+                    QMessageBox.warning(
+                        self,
+                        "Không thể tạo Character Bible",
+                        "Character Bible chỉ có thể tạo từ dữ liệu kịch bản có cấu trúc. "
+                        "Kịch bản hiện tại ở định dạng văn bản thuần túy."
+                    )
+                    self._append_log("⚠ Character Bible requires structured data, got plain text")
+                    return
+            elif isinstance(script_json_raw, dict):
+                script_json = script_json_raw
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Dữ liệu không hợp lệ",
+                    f"Loại dữ liệu kịch bản {type(script_json_raw)} không được hỗ trợ."
+                )
+                self._append_log(f"⚠ Unsupported script data type: {type(script_json_raw)}")
+                return
+            
             existing_bible = script_json.get("character_bible", [])
 
             cfg = self._collect_cfg()

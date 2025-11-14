@@ -2488,14 +2488,41 @@ class Text2VideoPanelV5(QWidget):
     def _generate_character_bible_from_data(self, data):
         """Generate character bible from script data"""
         try:
+            import json
             from services.google.character_bible import (
                 create_character_bible,
                 format_character_bible_for_display,
             )
 
+            # Parse script data - handle both string and dict
+            if isinstance(data, str):
+                try:
+                    # Try to parse as JSON
+                    script_dict = json.loads(data)
+                except json.JSONDecodeError:
+                    # Not JSON - cannot extract character bible from plain text
+                    QMessageBox.warning(
+                        self,
+                        "Không thể tạo Character Bible",
+                        "Character Bible chỉ có thể tạo từ dữ liệu kịch bản có cấu trúc. "
+                        "Kịch bản hiện tại ở định dạng văn bản thuần túy."
+                    )
+                    self._append_log("[WARN] Character Bible requires structured data, got plain text")
+                    return
+            elif isinstance(data, dict):
+                script_dict = data
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Dữ liệu không hợp lệ",
+                    f"Loại dữ liệu kịch bản {type(data)} không được hỗ trợ."
+                )
+                self._append_log(f"[WARN] Unsupported script data type: {type(data)}")
+                return
+
             video_concept = self.ed_idea.toPlainText().strip()
-            screenplay = data.get("screenplay_tgt", "") or data.get("screenplay_vi", "")
-            existing_bible = data.get("character_bible", [])
+            screenplay = script_dict.get("screenplay_tgt", "") or script_dict.get("screenplay_vi", "")
+            existing_bible = script_dict.get("character_bible", [])
 
             self._character_bible = create_character_bible(
                 video_concept, screenplay, existing_bible
