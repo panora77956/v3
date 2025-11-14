@@ -2087,6 +2087,16 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
         except ImportError:
             pass
     
+    # FIX: Define requires_no_characters variable for single scene generation
+    # Check if this domain/topic requires NO characters (e.g., PANORA Science Narrator)
+    NO_CHARACTER_DOMAINS = {
+        "KHOA HỌC GIÁO DỤC": ["PANORA - Nhà Tường thuật Khoa học"]
+    }
+    requires_no_characters = False
+    if domain and topic:
+        topics_list = NO_CHARACTER_DOMAINS.get(domain, [])
+        requires_no_characters = topic in topics_list
+    
     # Build context from previous scenes
     context = ""
     if previous_scenes:
@@ -2292,6 +2302,19 @@ def generate_script_scene_by_scene(idea, style, duration_seconds, provider='Gemi
                 print(f"[INFO] Scene-by-scene using custom prompt for {domain}/{topic}")
         except ImportError:
             pass
+    
+    # FIX: Define requires_no_characters variable
+    # Check if this domain/topic requires NO characters (e.g., PANORA Science Narrator)
+    # These domains use second-person narration with no fictional characters
+    NO_CHARACTER_DOMAINS = {
+        "KHOA HỌC GIÁO DỤC": ["PANORA - Nhà Tường thuật Khoa học"]
+    }
+    requires_no_characters = False
+    if domain and topic:
+        topics_list = NO_CHARACTER_DOMAINS.get(domain, [])
+        requires_no_characters = topic in topics_list
+        if requires_no_characters:
+            print(f"[INFO] Scene-by-scene: No-character mode for {domain}/{topic}")
     
     # Step 1: Generate metadata (title, character bible, outline)
     report_progress("Đang tạo metadata (title, character bible, outline)...", 15)
