@@ -2,6 +2,26 @@
 
 All notable changes to Video Super Ultra v3 are documented here.
 
+## [7.3.0] - 2025-11-14
+
+### Fixed - Image2Video API 400 Error
+- **Critical Fix**: Resolved Image2Video tab HTTP 400 "Unknown name 'imageInput'" error
+- **Root Cause**: Google Labs API changed field name from `imageInput` to `startImageInput` for video generation
+- **Solution**: Updated field name in video generation requests to match API endpoint naming pattern
+- **API Pattern**: 
+  - `batchAsyncGenerateVideoText` → uses `textInput`
+  - `batchAsyncGenerateVideoStartImage` → uses `startImageInput`
+- **Impact**: 
+  - Image-to-video generation now works correctly
+  - All I2V requests use proper field structure
+  - Upload endpoint unchanged (still correctly uses `imageInput`)
+- **Files Changed**: 
+  - `services/labs_flow_service.py` (line 1225)
+  - `services/google/labs_flow_client.py` (line 854)
+- **Documentation**: Added `docs/IMAGE2VIDEO_API_FIX.md` with detailed analysis
+- **Testing**: ✅ Syntax validation, imports, and security scan (CodeQL: 0 alerts) passed
+- **Note**: Upload endpoint still uses `imageInput` correctly (different endpoint, different schema)
+
 ## [7.2.9] - 2025-11-10
 
 ### Fixed - Vietnamese Text Overlay Issue
