@@ -850,8 +850,8 @@ class LabsFlowClient:
                 
                 # Add prompt - different field for I2V vs T2V
                 if mid_val:
-                    # Image-to-video: use imageInput with startImage
-                    request_item["imageInput"] = {
+                    # Image-to-video: use startImageInput (API changed from imageInput)
+                    request_item["startImageInput"] = {
                         "startImage": {"mediaId": mid_val},
                         "prompt": prompt
                     }
