@@ -185,6 +185,7 @@ You MUST use the 5-stage structure and second-person narration ONLY.
 
 EXAMPLES OF FORBIDDEN OUTPUT:
 ❌ "Tiến sĩ Anh [Nhà khoa học chính]: key_trait=Ám ảnh..."
+❌ "Tiến sĩ Linh [Đồng nghiệp giám sát]: key_trait=Thận trọng..."
 ❌ "ACT I (0-15s): Giới thiệu Tiến sĩ Anh và thí nghiệm..."
 ❌ "Anh tự tin ghi lại tình trạng của mình..."
 ❌ "visual=Dáng người gầy, nét mặt sắc sảo, mặc áo blouse..."
