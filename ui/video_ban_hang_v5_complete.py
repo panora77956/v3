@@ -1866,7 +1866,7 @@ class VideoBanHangV5(QWidget):
    # ui/video_ban_hang_v5_complete_fixed.py - CONTINUATION
 
     def _on_generate_video(self):
-        """Generate video"""
+        """Generate video for all scenes"""
         if not self.cache["outline"]:
             QMessageBox.warning(self, "Chưa có kịch bản", "Vui lòng viết kịch bản trước.")
             return
@@ -1875,28 +1875,227 @@ class VideoBanHangV5(QWidget):
             QMessageBox.warning(self, "Chưa có ảnh", "Vui lòng tạo ảnh trước.")
             return
 
+        # Get all scenes from outline
+        scenes = self.cache["outline"].get("scenes", [])
+        if not scenes:
+            QMessageBox.warning(self, "Không có cảnh", "Kịch bản không có cảnh nào.")
+            return
+
+        # Track which scenes have images
+        scene_images = self.cache.get("scene_images", {})
+        scenes_to_generate = []
+        
+        for scene in scenes:
+            scene_idx = scene.get("index")
+            if scene_idx in scene_images:
+                scenes_to_generate.append(scene_idx)
+            else:
+                self._append_log(f"⚠️ Bỏ qua cảnh {scene_idx}: chưa có ảnh")
+
+        if not scenes_to_generate:
+            QMessageBox.warning(
+                self, "Không có ảnh",
+                "Không có cảnh nào có ảnh. Vui lòng tạo ảnh trước."
+            )
+            return
+
+        # Confirm batch generation
+        reply = QMessageBox.question(
+            self, "Xác nhận tạo video",
+            f"Bạn muốn tạo video cho {len(scenes_to_generate)} cảnh?\n\n"
+            f"Thời gian ước tính: {len(scenes_to_generate) * 2}-{len(scenes_to_generate) * 3} phút",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+
         cfg = self._collect_cfg()
 
-        self._append_log("Bắt đầu tạo video...")
-        self._append_log(f"✓ Cache: {len(self.cache['scene_images'])} ảnh")
+        self._append_log("=" * 60)
+        self._append_log("🎬 BẮT ĐẦU TẠO VIDEO CHO TẤT CẢ CẢNH")
+        self._append_log("=" * 60)
+        self._append_log(f"✓ Tổng số cảnh: {len(scenes_to_generate)}")
+        self._append_log(f"✓ Cache: {len(scene_images)} ảnh")
         self._append_log(f"✓ Ngôn ngữ: {cfg.get('speech_lang', 'vi')}")
 
         voice_id = cfg.get('voice_id', '')
         if voice_id:
             self._append_log(f"✓ Voice ID: {voice_id}")
 
+        # Disable buttons during generation
         self.btn_video.setEnabled(False)
+        self.btn_script.setEnabled(False)
+        self.btn_images.setEnabled(False)
+        self.btn_stop.setEnabled(True)
 
-        QMessageBox.information(
-            self, "Thông báo",
-            "Chức năng tạo video sẽ được triển khai trong phiên bản tiếp theo."
-        )
+        # Track video generation start time
+        self._video_generation_start_time = datetime.datetime.now()
+        self._append_log(f"⏱️ Bắt đầu: {self._video_generation_start_time.strftime('%H:%M:%S')}")
 
+        # Store scenes to generate for sequential processing
+        self._scenes_to_generate = scenes_to_generate.copy()
+        self._total_scenes_count = len(scenes_to_generate)
+        self._completed_scenes_count = 0
+        self._failed_scenes = []
+
+        # Start generating first scene
+        self._generate_next_scene()
+
+    def _generate_next_scene(self):
+        """Generate video for next scene in queue"""
+        if not self._scenes_to_generate:
+            # All scenes completed
+            self._on_all_videos_completed()
+            return
+
+        # Get next scene
+        scene_idx = self._scenes_to_generate.pop(0)
+        self._append_log(f"\n{'='*60}")
+        self._append_log(f"🎬 Cảnh {scene_idx}/{self._total_scenes_count}")
+        self._append_log(f"{'='*60}")
+
+        # Find scene data
+        scenes = self.cache["outline"].get("scenes", [])
+        target_scene = None
+        for scene in scenes:
+            if scene.get("index") == scene_idx:
+                target_scene = scene
+                break
+
+        if not target_scene:
+            self._append_log(f"❌ Không tìm thấy dữ liệu cảnh {scene_idx}")
+            self._failed_scenes.append(scene_idx)
+            # Continue to next scene
+            self._generate_next_scene()
+            return
+
+        cfg = self._collect_cfg()
+
+        # Generate audio for this scene
+        self._generate_scene_audio(scene_idx, target_scene, cfg)
+
+        # Get video prompt
+        video_prompt = target_scene.get("prompt_video", "")
+        if not video_prompt:
+            self._append_log(f"❌ Cảnh {scene_idx} không có prompt video")
+            self._failed_scenes.append(scene_idx)
+            # Continue to next scene
+            self._generate_next_scene()
+            return
+
+        # Get aspect ratio
+        aspect_ratio = cfg.get("ratio", "9:16")
+        aspect_map = {
+            "9:16": "VIDEO_ASPECT_RATIO_PORTRAIT",
+            "16:9": "VIDEO_ASPECT_RATIO_LANDSCAPE",
+            "1:1": "VIDEO_ASPECT_RATIO_SQUARE"
+        }
+        aspect_api = aspect_map.get(aspect_ratio, "VIDEO_ASPECT_RATIO_PORTRAIT")
+
+        # Get project name for output directory
+        project_name = cfg.get("project_name", "default")
+        if svc:
+            dirs = svc.ensure_project_dirs(project_name)
+            dir_videos = str(dirs["video"])
+        else:
+            sanitized_name = sanitize_project_name(project_name)
+            dir_videos = str(Path.home() / "Downloads" / sanitized_name / "Video")
+            Path(dir_videos).mkdir(parents=True, exist_ok=True)
+
+        # Prepare payload
+        payload = {
+            "scenes": [{
+                "prompt": video_prompt,
+                "aspect": aspect_api
+            }],
+            "copies": 1,
+            "model_key": "veo_3_1_t2v_fast_ultra",
+            "title": f"{project_name}_scene{scene_idx}",
+            "dir_videos": dir_videos,
+            "upscale_4k": False,
+            "auto_download": True,
+            "quality": "1080p"
+        }
+
+        # Create and start worker
+        try:
+            from ui.workers.video_worker import VideoGenerationWorker
+
+            self.video_worker = VideoGenerationWorker(payload)
+            self.video_worker.log.connect(self._append_log)
+            self.video_worker.scene_completed.connect(
+                lambda scene, path: self._on_batch_scene_completed(scene_idx, path)
+            )
+            self.video_worker.error_occurred.connect(
+                lambda err: self._on_batch_scene_error(scene_idx, err)
+            )
+            self.video_worker.start()
+
+        except ImportError as e:
+            self._append_log(f"❌ Không thể import VideoGenerationWorker: {e}")
+            self._failed_scenes.append(scene_idx)
+            self._generate_next_scene()
+
+    def _on_batch_scene_completed(self, scene_idx, video_path):
+        """Callback when a scene video completes in batch mode"""
+        self._completed_scenes_count += 1
+        self._append_log(f"✅ Hoàn tất cảnh {scene_idx}: {video_path}")
+        self._append_log(f"📊 Tiến độ: {self._completed_scenes_count}/{self._total_scenes_count}")
+
+        # Auto-download if enabled
+        if self.chk_auto_download and self.chk_auto_download.isChecked():
+            self._auto_download_video(video_path)
+
+        # Continue to next scene
+        self._generate_next_scene()
+
+    def _on_batch_scene_error(self, scene_idx, error_msg):
+        """Callback when a scene video fails in batch mode"""
+        self._failed_scenes.append(scene_idx)
+        self._append_log(f"❌ Lỗi cảnh {scene_idx}: {error_msg}")
+
+        # Continue to next scene anyway
+        self._generate_next_scene()
+
+    def _on_all_videos_completed(self):
+        """Callback when all videos are generated"""
+        # Calculate total time
+        if hasattr(self, '_video_generation_start_time'):
+            end_time = datetime.datetime.now()
+            duration = (end_time - self._video_generation_start_time).total_seconds()
+            self._append_log(f"\n{'='*60}")
+            self._append_log(f"✅ HOÀN TẤT TẠO VIDEO")
+            self._append_log(f"{'='*60}")
+            self._append_log(f"⏱️ Thời gian: {int(duration//60)}m {int(duration%60)}s")
+            self._append_log(f"✅ Thành công: {self._completed_scenes_count}/{self._total_scenes_count}")
+            
+            if self._failed_scenes:
+                self._append_log(f"❌ Thất bại: {len(self._failed_scenes)} cảnh")
+                self._append_log(f"   Cảnh lỗi: {', '.join(map(str, self._failed_scenes))}")
+
+        # Re-enable buttons
         self.btn_video.setEnabled(True)
+        self.btn_script.setEnabled(True)
+        self.btn_images.setEnabled(True)
+        self.btn_stop.setEnabled(False)
 
-        # TODO: When video generation is fully implemented
-        # if video_path and self.chk_auto_download and self.chk_auto_download.isChecked():
-        #     self._auto_download_video(video_path)
+        # Save to history
+        self._save_to_history(video_count=self._completed_scenes_count)
+
+        # Show completion notification
+        if self._failed_scenes:
+            QMessageBox.warning(
+                self, "Hoàn tất có lỗi",
+                f"Đã tạo xong {self._completed_scenes_count}/{self._total_scenes_count} video.\n\n"
+                f"Cảnh lỗi: {', '.join(map(str, self._failed_scenes))}"
+            )
+        else:
+            QMessageBox.information(
+                self, "Hoàn tất",
+                f"Đã tạo xong tất cả {self._completed_scenes_count} video!"
+            )
 
     def _on_scene_recreate_image(self, scene_idx):
         """Recreate image for a specific scene (triggered by scene card button)"""
@@ -2140,13 +2339,24 @@ class VideoBanHangV5(QWidget):
                 self.img_worker.terminate()
                 self._append_log("[INFO] Đã dừng image worker")
 
+        if hasattr(self, 'video_worker') and self.video_worker:
+            if self.video_worker.isRunning():
+                self.video_worker.cancel()
+                self.video_worker.terminate()
+                self._append_log("[INFO] Đã dừng video worker")
+
+        # Clear batch video generation queue
+        if hasattr(self, '_scenes_to_generate'):
+            self._scenes_to_generate = []
+
         # Re-enable buttons
         self.btn_script.setEnabled(True)
         self.btn_script.setText("📝 Viết kịch bản")
         self.btn_images.setEnabled(True)
+        self.btn_video.setEnabled(True)
         self.btn_stop.setEnabled(False)
 
-        self._append_log("[INFO] Đã dừng xử lý")
+        self._append_log("⏹️ Đã dừng xử lý")
 
     def _change_download_path(self):
         """Change download folder via file dialog"""
