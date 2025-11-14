@@ -3,10 +3,13 @@
 TTS Service - Text-to-Speech Audio Generation
 Supports Google TTS, ElevenLabs, and OpenAI TTS providers
 """
-import os, base64, requests
-from typing import List, Tuple, Dict, Any, Optional
-from pathlib import Path
+import base64
 import logging
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
 
 from services.core.config import load as load_config
 from services.core.key_manager import refresh, rotated_list
@@ -45,13 +48,13 @@ def _tokens_of(kinds:Tuple[str,...])->List[str]:
 
 
 def synthesize_speech_google(text: str, voice_id: str, language_code: str = "vi-VN",
-                             ssml_markup: Optional[str] = None, 
+                             ssml_markup: Optional[str] = None,
                              speaking_rate: float = 1.0,
                              pitch: float = 0.0,
                              api_key: Optional[str] = None) -> Optional[bytes]:
     """
-    Synthesize speech using Google Cloud Text-to-Speech API
-    
+    Synthesize speech using Google Cloud Text-to-Speech API with API key rotation
+
     Args:
         text: Text to synthesize (plain text)
         voice_id: Google TTS voice ID (e.g., "vi-VN-Wavenet-A")
@@ -59,21 +62,19 @@ def synthesize_speech_google(text: str, voice_id: str, language_code: str = "vi-
         ssml_markup: Optional SSML markup (if provided, takes precedence over text)
         speaking_rate: Speaking rate (0.25 to 4.0, default 1.0)
         pitch: Pitch adjustment in semitones (-20.0 to 20.0, default 0.0)
-        api_key: Optional API key (if not provided, will use from config)
-    
+        api_key: Optional API key (if not provided, will rotate through config keys)
+
     Returns:
         Audio content as bytes (MP3 format), or None if failed
     """
-    # Get API key
-    if not api_key:
+    # Get API keys for rotation
+    if api_key:
+        keys = [api_key]
+    else:
         keys = _tokens_of(("google_tts", "google", "gemini"))
         if not keys:
             logger.error("No Google API key found for TTS")
             return None
-        api_key = keys[0]
-
-    # Build request
-    url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}"
 
     # Determine input type
     if ssml_markup:
@@ -101,29 +102,56 @@ def synthesize_speech_google(text: str, voice_id: str, language_code: str = "vi-
         "audioConfig": audio_config
     }
 
-    try:
-        logger.info(f"Synthesizing speech with Google TTS: voice={voice_id}, lang={language_code}")
-        response = requests.post(url, json=request_body, timeout=30)
-        response.raise_for_status()
+    # Try each API key in rotation
+    for i, key in enumerate(keys):
+        url = f"https://texttospeech.googleapis.com/v1/text:synthesize?key={key}"
 
-        result = response.json()
-        audio_content = result.get("audioContent")
+        try:
+            logger.info(
+                f"Synthesizing speech with Google TTS (key {i+1}/{len(keys)}): "
+                f"voice={voice_id}, lang={language_code}"
+            )
+            response = requests.post(url, json=request_body, timeout=30)
+            response.raise_for_status()
 
-        if audio_content:
-            # Decode base64 audio
-            audio_bytes = base64.b64decode(audio_content)
-            logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
-            return audio_bytes
-        else:
-            logger.error("No audio content in Google TTS response")
+            result = response.json()
+            audio_content = result.get("audioContent")
+
+            if audio_content:
+                # Decode base64 audio
+                audio_bytes = base64.b64decode(audio_content)
+                logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
+                return audio_bytes
+            else:
+                logger.error("No audio content in Google TTS response")
+                return None
+
+        except requests.exceptions.HTTPError:
+            # Sanitize error message to remove API key
+            status_code = response.status_code if response else "unknown"
+            # Check if it's a rate limit or auth error that might succeed with another key
+            if response and response.status_code in [401, 403, 429]:
+                logger.warning(
+                    f"Google TTS API key {i+1} failed with {status_code}, "
+                    f"trying next key..."
+                )
+                continue
+            else:
+                # Other HTTP errors - don't retry
+                logger.error(f"Google TTS API request failed with status {status_code}")
+                return None
+        except requests.exceptions.RequestException:
+            # Sanitize error message to not expose URL with API key
+            logger.error("Google TTS API request failed: Network error")
+            # Don't retry on network errors
+            return None
+        except Exception as e:
+            logger.error(f"Google TTS synthesis failed: {type(e).__name__}")
             return None
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Google TTS API request failed: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Google TTS synthesis failed: {e}")
-        return None
+    # All keys exhausted
+    logger.error(f"Google TTS API failed after trying {len(keys)} key(s)")
+    return None
 
 
 def synthesize_speech_elevenlabs(text: str, voice_id: str,
@@ -133,7 +161,7 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
                                  api_key: Optional[str] = None) -> Optional[bytes]:
     """
     Synthesize speech using ElevenLabs API with API key rotation
-    
+
     Args:
         text: Text to synthesize
         voice_id: ElevenLabs voice ID
@@ -141,7 +169,7 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
         similarity_boost: Voice similarity boost (0.0 to 1.0)
         style: Style exaggeration (0.0 to 1.0)
         api_key: Optional API key (if not provided, will rotate through config keys)
-    
+
     Returns:
         Audio content as bytes (MP3 format), or None if failed
     """
@@ -168,7 +196,6 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
     }
 
     # Try each API key in rotation
-    last_error = None
     for i, key in enumerate(keys):
         headers = {
             "xi-api-key": key,
@@ -176,7 +203,10 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
         }
 
         try:
-            logger.info(f"Synthesizing speech with ElevenLabs (key {i+1}/{len(keys)}): voice={voice_id}")
+            logger.info(
+                f"Synthesizing speech with ElevenLabs (key {i+1}/{len(keys)}): "
+                f"voice={voice_id}"
+            )
             response = requests.post(url, headers=headers, json=request_body, timeout=30)
             response.raise_for_status()
 
@@ -184,28 +214,29 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
             logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
             return audio_bytes
 
-        except requests.exceptions.HTTPError as e:
-            last_error = e
+        except requests.exceptions.HTTPError:
             # Check if it's a rate limit or auth error that might succeed with another key
             if response.status_code in [401, 429]:
-                logger.warning(f"ElevenLabs API key {i+1} failed with {response.status_code}, trying next key...")
+                logger.warning(
+                    f"ElevenLabs API key {i+1} failed with {response.status_code}, "
+                    f"trying next key..."
+                )
                 continue
             else:
                 # Other HTTP errors - don't retry
-                logger.error(f"ElevenLabs API request failed with status {response.status_code}: {e}")
+                logger.error(f"ElevenLabs API request failed with status {response.status_code}")
                 return None
-        except requests.exceptions.RequestException as e:
-            last_error = e
-            logger.error(f"ElevenLabs API request failed: {e}")
+        except requests.exceptions.RequestException:
+            # Sanitize error message to not expose API key in headers
+            logger.error("ElevenLabs API request failed: Network error")
             # Don't retry on network errors
             return None
         except Exception as e:
-            last_error = e
-            logger.error(f"ElevenLabs synthesis failed: {e}")
+            logger.error(f"ElevenLabs synthesis failed: {type(e).__name__}")
             return None
 
     # All keys exhausted
-    logger.error(f"ElevenLabs API failed after trying {len(keys)} key(s): {last_error}")
+    logger.error(f"ElevenLabs API failed after trying {len(keys)} key(s)")
     return None
 
 
@@ -215,14 +246,14 @@ def synthesize_speech_openai(text: str, voice: str = "alloy",
                             api_key: Optional[str] = None) -> Optional[bytes]:
     """
     Synthesize speech using OpenAI TTS API
-    
+
     Args:
         text: Text to synthesize
         voice: Voice name (alloy, echo, fable, onyx, nova, shimmer)
         model: Model name (tts-1 or tts-1-hd)
         speed: Speaking speed (0.25 to 4.0)
         api_key: Optional API key
-    
+
     Returns:
         Audio content as bytes (MP3 format), or None if failed
     """
@@ -257,19 +288,25 @@ def synthesize_speech_openai(text: str, voice: str = "alloy",
         logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
         return audio_bytes
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"OpenAI TTS API request failed: {e}")
+    except requests.exceptions.HTTPError:
+        # Sanitize error message to not expose API key
+        status_code = response.status_code if response else "unknown"
+        logger.error(f"OpenAI TTS API request failed with status {status_code}")
+        return None
+    except requests.exceptions.RequestException:
+        # Sanitize error message to not expose API key in headers
+        logger.error("OpenAI TTS API request failed: Network error")
         return None
     except Exception as e:
-        logger.error(f"OpenAI TTS synthesis failed: {e}")
+        logger.error(f"OpenAI TTS synthesis failed: {type(e).__name__}")
         return None
 
 
-def synthesize_speech(voiceover_config: Dict[str, Any], 
+def synthesize_speech(voiceover_config: Dict[str, Any],
                      output_path: Optional[str] = None) -> Optional[bytes]:
     """
     Synthesize speech from voiceover configuration (high-level function)
-    
+
     Args:
         voiceover_config: Voiceover configuration dict with:
             - tts_provider: "google", "elevenlabs", or "openai"
@@ -280,7 +317,7 @@ def synthesize_speech(voiceover_config: Dict[str, Any],
             - prosody: Optional prosody settings (rate, pitch, etc.)
             - elevenlabs_settings: Optional ElevenLabs settings
         output_path: Optional path to save audio file
-    
+
     Returns:
         Audio content as bytes, or None if failed
     """
@@ -369,15 +406,15 @@ def synthesize_speech(voiceover_config: Dict[str, Any],
     return audio_bytes
 
 
-def generate_audio_from_scene(scene_json: Dict[str, Any], 
+def generate_audio_from_scene(scene_json: Dict[str, Any],
                               output_dir: str) -> Optional[str]:
     """
     Generate audio file from scene JSON configuration
-    
+
     Args:
         scene_json: Scene JSON dict with 'audio' -> 'voiceover' configuration
         output_dir: Directory to save audio file
-    
+
     Returns:
         Path to generated audio file, or None if failed
     """
