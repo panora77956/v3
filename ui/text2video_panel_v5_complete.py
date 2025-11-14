@@ -1564,6 +1564,9 @@ class Text2VideoPanelV5(QWidget):
         cb = data.get("character_bible") or []
         if cb:
             for c in cb:
+                # Defensive: Skip non-dict items (can happen when JSON parsing partially fails)
+                if not isinstance(c, dict):
+                    continue
                 parts.append(
                     f"- {c.get('name','?')} [{c.get('role','?')}]: "
                     f"key_trait={c.get('key_trait','')}; "

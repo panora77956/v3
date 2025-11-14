@@ -2107,6 +2107,9 @@ def _generate_single_scene(scene_num, total_scenes, idea, style, output_lang, du
     if character_bible and not requires_no_characters:
         char_context = "\n**CHARACTER BIBLE (maintain consistency):**\n"
         for char in character_bible:
+            # Defensive: Skip non-dict items (can happen when JSON parsing partially fails)
+            if not isinstance(char, dict):
+                continue
             char_context += f"\n{char.get('name', 'Unknown')}:\n"
             char_context += f"- Role: {char.get('role', '')}\n"
             char_context += f"- Visual: {char.get('visual_identity', '')}\n"
@@ -2801,6 +2804,9 @@ def generate_thumbnail_design(script_data, provider='Gemini 2.5', api_key=None):
     if character_bible:
         char_summary = "Nhân vật chính:\n"
         for char in character_bible[:3]:  # Top 3 characters
+            # Defensive: Skip non-dict items (can happen when JSON parsing partially fails)
+            if not isinstance(char, dict):
+                continue
             char_summary += f"- {char.get('name', 'Unknown')}: {char.get('visual_identity', 'N/A')}\n"
 
     # Build prompt
