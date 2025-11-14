@@ -114,7 +114,7 @@ def _try_vertex_ai_image_generation(prompt: str, aspect_ratio: str = "1:1", log_
                     location=account.location
                 )
                 
-                # Use configured Vertex AI image model (gemini-2.5-flash)
+                # Use configured Vertex AI image model (gemini-2.5-flash-image)
                 model_name = VERTEX_AI_IMAGE_MODEL
                 
                 log(f"[IMAGE GEN] Gọi Vertex AI Gemini ({model_name}) với aspect ratio {aspect_ratio}...")

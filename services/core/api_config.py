@@ -9,7 +9,7 @@ GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image"  # FIXED: was "imagen-3.0-generate
 
 # Vertex AI Models (for production use)
 VERTEX_AI_TEXT_MODEL = "gemini-2.5-flash"  # Same as AI Studio for consistency
-VERTEX_AI_IMAGE_MODEL = "gemini-2.5-flash"
+VERTEX_AI_IMAGE_MODEL = "gemini-2.5-flash-image"  # Image generation model
 
 # Base URLs
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"  # AI Studio API
