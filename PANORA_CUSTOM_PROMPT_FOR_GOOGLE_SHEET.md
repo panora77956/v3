@@ -1,24 +1,36 @@
-# -*- coding: utf-8 -*-
-"""
-Custom system prompts for specific domain+topic combinations
+# PANORA Custom Prompt - Hướng Dẫn Cập Nhật Google Sheet
 
-This module provides custom system prompts that override the default prompts
-in llm_story_service.py for specific domain/topic combinations.
+## ⚠️ QUAN TRỌNG
 
-⚠️ WARNING: This file is AUTO-GENERATED and will be OVERWRITTEN when you update
-prompts from Google Sheet. 
+File `services/domain_custom_prompts.py` sẽ bị **GHI ĐÈ** mỗi khi bạn cập nhật từ Google Sheet.
 
-To keep your custom prompts:
-1. Add them to your Google Sheet with Type="custom"
-2. Update from Google Sheet
-3. This file will be regenerated automatically
+Để giữ được enhanced PANORA prompt với NO CHARACTER rules, bạn cần **thêm vào Google Sheet** của mình.
 
-See: PANORA_CUSTOM_PROMPT_FOR_GOOGLE_SHEET.md for detailed instructions
-"""
+---
 
-# Custom system prompts for domain-specific script generation
-CUSTOM_PROMPTS = {
-    ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học"): """
+## Cách Thêm Vào Google Sheet
+
+### Bước 1: Mở Google Sheet
+Mở sheet: https://docs.google.com/spreadsheets/d/1ohiL6xOBbjC7La2iUdkjrVjG4IEUnVWhI0fRoarD6P0/edit?gid=1507296519
+
+### Bước 2: Tìm hoặc tạo dòng PANORA
+Tìm dòng với:
+- **Domain**: `KHOA HỌC GIÁO DỤC`
+- **Topic**: `PANORA - Nhà Tường thuật Khoa học`
+
+### Bước 3: Điền thông tin
+
+| Domain | Topic | Type | System Prompt |
+|--------|-------|------|---------------|
+| KHOA HỌC GIÁO DỤC | PANORA - Nhà Tường thuật Khoa học | **custom** | [Copy prompt bên dưới] |
+
+**⚠️ CHÚ Ý**: Cột "Type" PHẢI là `custom` (chữ thường)
+
+### Bước 4: Copy Enhanced Prompt
+
+Copy toàn bộ nội dung bên dưới vào cột "System Prompt":
+
+```
 ═══════════════════════════════════════════════════════════════
 ⚠️ PANORA SCIENCE NARRATOR - CRITICAL RULES ⚠️
 ═══════════════════════════════════════════════════════════════
@@ -152,19 +164,87 @@ V. CHECKLIST XÁC THỰC (kiểm tra trước khi submit):
 response sẽ bị TỪ CHỐI. Nếu bạn dùng cấu trúc ACT I/II/III, response 
 sẽ bị TỪ CHỐI. PHẢI tuân thủ 5 giai đoạn và ngôi thứ hai.
 ═══════════════════════════════════════════════════════════════
-"""
-}
+```
 
+### Bước 5: Lưu và Cập Nhật
 
-def get_custom_prompt(domain: str, topic: str) -> str:
-    """
-    Get custom system prompt for specific domain+topic combination
-    
-    Args:
-        domain: Domain name (e.g., "KHOA HỌC GIÁO DỤC")
-        topic: Topic name (e.g., "PANORA - Nhà Tường thuật Khoa học")
-    
-    Returns:
-        Custom prompt string or None if not found
-    """
-    return CUSTOM_PROMPTS.get((domain, topic))
+1. Lưu Google Sheet
+2. Trong ứng dụng, click nút **"Cập nhật Prompts từ Google Sheet"**
+3. Hệ thống sẽ tự động:
+   - Tải prompt từ Google Sheet
+   - Ghi vào `domain_custom_prompts.py`
+   - Ghi vào `domain_prompts.py` (merged)
+
+---
+
+## Cách Hệ Thống Hoạt Động
+
+### Flow Cập Nhật:
+```
+Google Sheet (Type=custom)
+    ↓
+prompt_updater.py (fetch & parse)
+    ↓
+domain_custom_prompts.py (custom only)
+    ↓
+llm_story_service.py (checks custom first)
+    ↓
+Enhanced schema with NO CHARACTER rules
+```
+
+### Ưu Tiên Prompt:
+1. **Custom prompt** (từ `domain_custom_prompts.py`) - ưu tiên cao nhất
+2. **Regular prompt** (từ `domain_prompts.py`) - fallback
+3. **Default prompt** (trong `llm_story_service.py`) - nếu không tìm thấy
+
+### Không Cần Keyword "panora":
+Hệ thống matching dựa vào:
+```python
+(domain, topic) == ("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học")
+```
+
+Chỉ cần Domain + Topic khớp, KHÔNG cần keyword trong prompt.
+
+---
+
+## Tại Sao Cần Làm Như Vậy?
+
+### ❌ Trước đây (sai):
+- Hardcode prompt trong repo → Bị ghi đè khi update từ Google Sheet
+- Không đồng bộ với Google Sheet → Mất control
+
+### ✅ Bây giờ (đúng):
+- Prompt trong Google Sheet → Single source of truth
+- Cập nhật tự động → Luôn đồng bộ
+- Dễ chỉnh sửa → Không cần code
+
+---
+
+## Kiểm Tra Sau Khi Cập Nhật
+
+Chạy test:
+```bash
+cd /home/runner/work/v3/v3
+python3 << 'EOF'
+from services.domain_custom_prompts import get_custom_prompt
+
+prompt = get_custom_prompt("KHOA HỌC GIÁO DỤC", "PANORA - Nhà Tường thuật Khoa học")
+if prompt and "CẤM TẠO NHÂN VẬT" in prompt:
+    print("✅ Enhanced PANORA prompt loaded successfully!")
+else:
+    print("❌ Prompt not found or incomplete")
+EOF
+```
+
+---
+
+## Các Custom Prompts Khác
+
+Nếu bạn có custom prompts khác (không phải PANORA), áp dụng cùng cách:
+
+1. Thêm dòng mới trong Google Sheet
+2. Điền Domain, Topic, **Type=custom**, System Prompt
+3. Cập nhật từ Google Sheet
+4. Hệ thống tự động xử lý
+
+**Lưu ý**: `Type` column phải là `custom` (chữ thường) để được nhận diện.
