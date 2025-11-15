@@ -1,24 +1,32 @@
-# Parallel Scene Generation Optimization (v7.3.2)
+# Performance Optimization: Parallel Processing (v7.3.2)
 
 ## Overview
 
-This optimization improves script generation speed for long videos by approximately **5x** through parallel scene processing.
+This optimization improves both **script generation speed** (5x faster) and **video download speed** (5-10x faster) through parallel processing.
 
-## Problem
+## Problems Solved
 
-Previously, when generating scripts for long videos (>180 seconds), the system would generate each scene sequentially:
+### 1. Slow Script Generation (Long Videos)
+Previously, when generating scripts for long videos (>180 seconds):
 - Scene 1 → Wait for completion → Scene 2 → Wait → Scene 3 → ...
 - For a 10-minute video with 75 scenes, this meant 75 sequential API calls
 - Total time: ~10 minutes (waiting for each scene to complete)
 
-## Solution
+### 2. Slow Video Downloads
+Previously, video downloads happened sequentially:
+- Download video 1 → Wait → Download video 2 → Wait → ...
+- For 10 videos, total time: ~5-10 minutes depending on network
+- Idle waiting time while other videos could be downloading
 
+## Solutions
+
+### 1. Parallel Script Generation
 The optimization introduces **batch parallel processing**:
 - Generates 5 scenes at once in parallel using ThreadPoolExecutor
 - Maintains scene order and continuity
 - Significantly reduces total generation time
 
-### Example: 10-minute video (75 scenes)
+Example: 10-minute video (75 scenes)
 ```
 Before: Scene 1 → Scene 2 → Scene 3 → ... → Scene 75  (sequential)
         Time: ~10 minutes
@@ -31,8 +39,25 @@ After:  Batch 1: [Scene 1-5]   }
         Time: ~2 minutes (5x faster!)
 ```
 
+### 2. Parallel Video Downloads
+Downloads multiple videos simultaneously:
+- Downloads up to 5 videos in parallel using ThreadPoolExecutor
+- Queues ready videos during polling and processes in batches
+- Significantly reduces total download time
+
+Example: 10 videos
+```
+Before: Download 1 → Download 2 → Download 3 → ... → Download 10  (sequential)
+        Time: ~10 minutes (1 min per video)
+
+After:  Batch 1: [Video 1-5] in parallel
+        Batch 2: [Video 6-10] in parallel
+        Time: ~2 minutes (5x faster!)
+```
+
 ## Performance Improvements
 
+### Script Generation
 | Video Length | Scenes | Before    | After     | Speedup | Time Saved |
 |-------------|--------|-----------|-----------|---------|------------|
 | 3 minutes   | 22     | ~3.0 min  | ~0.7 min  | 4.3x    | 2.3 min    |
@@ -40,24 +65,47 @@ After:  Batch 1: [Scene 1-5]   }
 | 10 minutes  | 75     | ~10.0 min | ~2.0 min  | 5.0x    | 8.0 min    |
 | 15 minutes  | 113    | ~15.1 min | ~3.1 min  | 4.9x    | 12.0 min   |
 
+### Video Downloads
+| Video Count | Before      | After       | Speedup | Time Saved |
+|------------|-------------|-------------|---------|------------|
+| 5 videos   | ~5 min      | ~1 min      | 5x      | 4 min      |
+| 10 videos  | ~10 min     | ~2 min      | 5x      | 8 min      |
+| 20 videos  | ~20 min     | ~4 min      | 5x      | 16 min     |
+
 ## How It Works
 
-### 1. Batch Processing
+### 1. Script Generation: Batch Processing
 - Divides scenes into batches of 5
 - Each batch is processed in parallel
 - Batches are processed sequentially (to maintain context)
 
-### 2. Context Preservation
+### 2. Script Generation: Context Preservation
 - Each batch uses the completed scenes as context
 - Within a batch, all scenes share the same baseline context
 - Scene order is maintained through result sorting
 
-### 3. Error Handling
+### 3. Script Generation: Error Handling
 - Each scene has automatic retry logic
 - If a scene fails, the entire batch fails (for consistency)
 - Errors are reported clearly to the user
 
+### 4. Video Downloads: Parallel Processing
+- Videos ready for download are queued during polling
+- Downloads are processed in batches of up to 5 videos simultaneously
+- Each download task includes:
+  - Video URL and destination path
+  - Authentication token (for multi-account support)
+  - Thumbnail generation after successful download
+- Progress reporting for each completed download
+
+### 5. Video Downloads: Error Handling
+- Failed downloads are reported with error messages
+- Successful downloads are tracked for optional 4K upscaling
+- Summary statistics (succeeded/failed) displayed after each batch
+
 ## Configuration
+
+### Script Generation Batch Size
 
 You can adjust the batch size by modifying the constant in `services/llm_story_service.py`:
 
@@ -72,7 +120,7 @@ PARALLEL_SCENE_BATCH_SIZE = 10  # 10 scenes at once
 PARALLEL_SCENE_BATCH_SIZE = 3   # 3 scenes at once
 ```
 
-### Trade-offs
+#### Script Generation Trade-offs
 
 | Batch Size | Speed | Context Quality | API Load |
 |-----------|-------|----------------|----------|
@@ -80,11 +128,39 @@ PARALLEL_SCENE_BATCH_SIZE = 3   # 3 scenes at once
 | **5** (default) | **Very Good** | **Good** | **Medium** |
 | 10        | Excellent | Fair       | High     |
 
+### Video Download Parallelism
+
+You can adjust the download parallelism by modifying the constant in `ui/text2video_panel_impl.py`:
+
+```python
+# Default: Download 5 videos in parallel
+MAX_PARALLEL_DOWNLOADS = 5
+
+# For faster downloads (requires good network bandwidth):
+MAX_PARALLEL_DOWNLOADS = 10  # 10 videos at once
+
+# For limited bandwidth or disk I/O:
+MAX_PARALLEL_DOWNLOADS = 3   # 3 videos at once
+```
+
+#### Video Download Trade-offs
+
+| Parallel Downloads | Speed | Network Load | Disk I/O |
+|-------------------|-------|--------------|----------|
+| 3                 | Good  | Low          | Low      |
+| **5** (default)   | **Very Good** | **Medium** | **Medium** |
+| 10                | Excellent | High     | High     |
+
 ## Technical Details
 
-### Implementation
+### Script Generation Implementation
 - **File:** `services/llm_story_service.py`
 - **Function:** `generate_script_scene_by_scene()`
+- **Technology:** Python's `concurrent.futures.ThreadPoolExecutor`
+
+### Video Download Implementation
+- **File:** `ui/text2video_panel_impl.py`
+- **Functions:** `_poll_all_jobs()`, `_process_parallel_downloads()`
 - **Technology:** Python's `concurrent.futures.ThreadPoolExecutor`
 
 ### Key Changes

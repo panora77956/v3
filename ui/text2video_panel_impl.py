@@ -19,6 +19,12 @@ from utils.filename_sanitizer import sanitize_project_name, sanitize_filename
 # Backward compatibility
 LabsClient = LabsFlowClient
 
+# Parallel download configuration
+# MAX_PARALLEL_DOWNLOADS controls how many videos are downloaded simultaneously
+# Higher values = faster downloads but more network/disk load
+# Recommended: 3-5 for optimal balance
+MAX_PARALLEL_DOWNLOADS = 5  # Download up to 5 videos in parallel
+
 _ASPECT_MAP = {
     "16:9": "VIDEO_ASPECT_RATIO_LANDSCAPE",
     "21:9": "VIDEO_ASPECT_RATIO_LANDSCAPE",
@@ -1753,6 +1759,9 @@ class _Worker(QObject):
         completed_jobs = []  # Track successfully downloaded jobs for 4K upscale
         max_retries = 3
         max_download_retries = 5
+        
+        # OPTIMIZATION: Queue for parallel downloads
+        ready_to_download = []  # Videos ready for download (not yet started)
 
         for poll_round in range(120):
             if self.should_stop:
@@ -1840,29 +1849,23 @@ class _Worker(QObject):
                             card["url"] = video_url
                             self.log.emit(f"[SUCCESS] Scene {scene} Copy {copy_num}: Video ready!")
 
-                            # Download if enabled
+                            # OPTIMIZATION: Queue for parallel download instead of downloading immediately
                             if auto_download:
                                 out_name = f"scene_{scene:03d}_copy_{copy_num:02d}.mp4"
                                 dst_path = os.path.join(dir_videos, out_name)
-
-                                # Get bearer token for multi-account download support
                                 bearer_token = job_dict.get("bearer_token")
-
-                                if self._download(video_url, dst_path, bearer_token=bearer_token):
-                                    card["path"] = dst_path
-                                    card["status"] = "DOWNLOADED"
-
-                                    # Thumbnail
-                                    thumb = self._make_thumb(dst_path, thumbs_dir, scene, copy_num)
-                                    if thumb:
-                                        card["thumb"] = thumb
-
-                                    self.log.emit(f"[DOWNLOAD] Scene {scene} Copy {copy_num}: Downloaded")
-                                    # Add to completed jobs for 4K upscale
-                                    completed_jobs.append(job_info)
-                                else:
-                                    card["status"] = "DOWNLOAD_FAILED"
-                                    card["error_reason"] = "Tải video thất bại"
+                                
+                                # Add to download queue
+                                ready_to_download.append({
+                                    'job_info': job_info,
+                                    'card': card,
+                                    'video_url': video_url,
+                                    'dst_path': dst_path,
+                                    'bearer_token': bearer_token,
+                                    'scene': scene,
+                                    'copy_num': copy_num,
+                                    'thumbs_dir': thumbs_dir
+                                })
 
                             self.job_card.emit(card)
                         else:
@@ -1907,6 +1910,15 @@ class _Worker(QObject):
             # Update main jobs list
             jobs = [job for job_list in client_jobs.values() for job in job_list]
 
+            # OPTIMIZATION: Process ready downloads in parallel batches
+            if ready_to_download:
+                self._process_parallel_downloads(
+                    ready_to_download, 
+                    completed_jobs,
+                    thumbs_dir
+                )
+                ready_to_download.clear()
+            
             if jobs:
                 # Warn if approaching timeout
                 if poll_round >= 100:
@@ -1914,6 +1926,14 @@ class _Worker(QObject):
                 else:
                     self.log.emit(f"[INFO] Waiting for {len(jobs)} videos (round {poll_round + 1}/120)...")
                 time.sleep(5)
+
+        # Process any remaining downloads
+        if ready_to_download:
+            self._process_parallel_downloads(
+                ready_to_download, 
+                completed_jobs,
+                thumbs_dir
+            )
 
         # If we exit the loop with remaining jobs, they timed out
         if jobs:
@@ -1943,4 +1963,98 @@ class _Worker(QObject):
                         self.log.emit(f"[4K] ✓ Scene {card['scene']} copy {card['copy']}: Upscaled to 4K")
                     except Exception as e:
                         self.log.emit(f"[ERR] 4K upscale failed for scene {card['scene']} copy {card['copy']}: {e}")
+    
+    def _process_parallel_downloads(self, download_queue, completed_jobs, thumbs_dir):
+        """
+        Download multiple videos in parallel using ThreadPoolExecutor
+        
+        Args:
+            download_queue: List of download tasks
+            completed_jobs: List to append successfully downloaded jobs
+            thumbs_dir: Directory for thumbnails
+        """
+        if not download_queue:
+            return
+        
+        import concurrent.futures
+        
+        batch_size = min(len(download_queue), MAX_PARALLEL_DOWNLOADS)
+        self.log.emit(f"[DOWNLOAD] Starting parallel download of {len(download_queue)} videos ({batch_size} at a time)...")
+        
+        def download_one(download_task):
+            """Download a single video with error handling"""
+            try:
+                job_info = download_task['job_info']
+                card = download_task['card']
+                video_url = download_task['video_url']
+                dst_path = download_task['dst_path']
+                bearer_token = download_task['bearer_token']
+                scene = download_task['scene']
+                copy_num = download_task['copy_num']
+                
+                # Attempt download
+                if self._download(video_url, dst_path, bearer_token=bearer_token):
+                    card["path"] = dst_path
+                    card["status"] = "DOWNLOADED"
+                    
+                    # Generate thumbnail
+                    thumb = self._make_thumb(dst_path, thumbs_dir, scene, copy_num)
+                    if thumb:
+                        card["thumb"] = thumb
+                    
+                    return {
+                        'success': True,
+                        'job_info': job_info,
+                        'card': card,
+                        'scene': scene,
+                        'copy_num': copy_num
+                    }
+                else:
+                    card["status"] = "DOWNLOAD_FAILED"
+                    card["error_reason"] = "Tải video thất bại"
+                    return {
+                        'success': False,
+                        'card': card,
+                        'scene': scene,
+                        'copy_num': copy_num,
+                        'error': "Download failed"
+                    }
+            except Exception as e:
+                card["status"] = "DOWNLOAD_FAILED"
+                card["error_reason"] = f"Lỗi tải video: {str(e)[:50]}"
+                return {
+                    'success': False,
+                    'card': card,
+                    'scene': download_task['scene'],
+                    'copy_num': download_task['copy_num'],
+                    'error': str(e)
+                }
+        
+        # Process downloads in parallel batches
+        downloaded_count = 0
+        failed_count = 0
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+            # Submit all downloads
+            futures = [executor.submit(download_one, task) for task in download_queue]
+            
+            # Process results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                
+                if result['success']:
+                    downloaded_count += 1
+                    completed_jobs.append(result['job_info'])
+                    self.log.emit(f"[DOWNLOAD] ✓ Scene {result['scene']} Copy {result['copy_num']}: Downloaded ({downloaded_count}/{len(download_queue)})")
+                    self.job_card.emit(result['card'])
+                else:
+                    failed_count += 1
+                    self.log.emit(f"[DOWNLOAD] ✗ Scene {result['scene']} Copy {result['copy_num']}: Failed - {result.get('error', 'Unknown error')}")
+                    self.job_card.emit(result['card'])
+        
+        # Summary
+        if failed_count > 0:
+            self.log.emit(f"[DOWNLOAD] Completed: {downloaded_count} succeeded, {failed_count} failed")
+        else:
+            self.log.emit(f"[DOWNLOAD] ✓ All {downloaded_count} videos downloaded successfully")
 
