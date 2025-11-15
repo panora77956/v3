@@ -126,11 +126,11 @@ def synthesize_speech_google(text: str, voice_id: str, language_code: str = "vi-
                 logger.error("No audio content in Google TTS response")
                 return None
 
-        except requests.exceptions.HTTPError:
+        except requests.exceptions.HTTPError as e:
             # Sanitize error message to remove API key
-            status_code = response.status_code if response else "unknown"
+            status_code = e.response.status_code if e.response else "unknown"
             # Check if it's a rate limit or auth error that might succeed with another key
-            if response and response.status_code in [401, 403, 429]:
+            if e.response and e.response.status_code in [401, 403, 429]:
                 logger.warning(
                     f"Google TTS API key {i+1} failed with {status_code}, "
                     f"trying next key..."
@@ -214,17 +214,18 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
             logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
             return audio_bytes
 
-        except requests.exceptions.HTTPError:
+        except requests.exceptions.HTTPError as e:
             # Check if it's a rate limit or auth error that might succeed with another key
-            if response.status_code in [401, 429]:
+            status_code = e.response.status_code if e.response else "unknown"
+            if e.response and e.response.status_code in [401, 429]:
                 logger.warning(
-                    f"ElevenLabs API key {i+1} failed with {response.status_code}, "
+                    f"ElevenLabs API key {i+1} failed with {status_code}, "
                     f"trying next key..."
                 )
                 continue
             else:
                 # Other HTTP errors - don't retry
-                logger.error(f"ElevenLabs API request failed with status {response.status_code}")
+                logger.error(f"ElevenLabs API request failed with status {status_code}")
                 return None
         except requests.exceptions.RequestException:
             # Sanitize error message to not expose API key in headers
@@ -288,9 +289,9 @@ def synthesize_speech_openai(text: str, voice: str = "alloy",
         logger.info(f"Successfully synthesized {len(audio_bytes)} bytes of audio")
         return audio_bytes
 
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as e:
         # Sanitize error message to not expose API key
-        status_code = response.status_code if response else "unknown"
+        status_code = e.response.status_code if e.response else "unknown"
         logger.error(f"OpenAI TTS API request failed with status {status_code}")
         return None
     except requests.exceptions.RequestException:
