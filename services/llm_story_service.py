@@ -2045,9 +2045,19 @@ def _validate_no_characters(script_data, domain=None, topic=None):
             custom_prompt = get_custom_prompt(domain, topic)
             has_custom_prompt = custom_prompt is not None
             # Only validate if custom prompt explicitly mentions "no character" or similar
-            if has_custom_prompt and "no character" not in custom_prompt.lower():
-                # Custom prompt doesn't prohibit characters, skip validation
-                return True, None
+            if has_custom_prompt:
+                custom_lower = custom_prompt.lower()
+                # Check for various "no character" phrases
+                prohibits_characters = any([
+                    "no character" in custom_lower,
+                    "cấm tạo nhân vật" in custom_lower,
+                    "không tạo nhân vật" in custom_lower,
+                    "character_bible = []" in custom_prompt,
+                    "character_bible=[]" in custom_prompt.replace(" ", "")
+                ])
+                if not prohibits_characters:
+                    # Custom prompt doesn't prohibit characters, skip validation
+                    return True, None
         except ImportError:
             pass
     
