@@ -145,8 +145,7 @@ class VideoGenerationWorker(QThread):
     def _run_video(self):
         """Main video generation logic with parallel submission and download."""
         import threading
-        from queue import Queue
-        
+
         p = self.payload
         st = cfg.load()
 
@@ -181,7 +180,7 @@ class VideoGenerationWorker(QThread):
             self.log.emit(
                 "[INFO] Processing mode: PARALLEL (simultaneous processing across accounts)"
             )
-            
+
             # Use parallel processing for faster generation
             self._run_video_parallel(p, account_mgr)
             return
@@ -297,18 +296,18 @@ class VideoGenerationWorker(QThread):
                         "model": model_key,
                         "aspect_ratio": ratio
                     }
-                    
+
                     # Store bearer token for multi-account download support
                     # Extract the first token from the tokens list if available
                     if tokens and len(tokens) > 0:
                         body["bearer_token"] = tokens[0]
-                    
+
                     # Store account info for multi-account batch checking
                     if account_mgr.is_multi_account_enabled():
                         body["account_name"] = account.name
                         body["project_id"] = project_id
                         body["tokens"] = tokens
-                    
+
                     self.log.emit(f"[INFO] Start scene {actual_scene_num} with {copies} copies in one batch…")
                     rc = client.start_one(
                         body, model_key, ratio, scene["prompt"], copies=copies, project_id=project_id
@@ -359,14 +358,14 @@ class VideoGenerationWorker(QThread):
                                 "dir": dir_videos
                             }
                             self.job_card.emit(card)
-                    
+
                     # Small delay between submissions to avoid overwhelming the API
                     time.sleep(2)
-                
+
                 # Signal that all submissions are complete
                 submission_complete.set()
                 self.log.emit(f"[INFO] All {total_scenes} scene submissions completed")
-                
+
             except Exception as e:
                 import traceback
                 self.log.emit(f"[ERROR] Submission thread error: {e}")
@@ -376,7 +375,7 @@ class VideoGenerationWorker(QThread):
         # Start submission thread
         submit_thread = threading.Thread(target=submission_thread, daemon=True, name="VideoSubmission")
         submit_thread.start()
-        
+
         # Wait 30 seconds or until first submission completes before starting polling
         self.log.emit("[INFO] Waiting 30 seconds before starting polling for completed videos...")
         time.sleep(30)
@@ -397,12 +396,12 @@ class VideoGenerationWorker(QThread):
             # Thread-safe access to jobs list
             with jobs_lock:
                 jobs_copy = jobs.copy()
-                
+
             # Check if both submission is complete and no jobs remain
             if submission_complete.is_set() and not jobs_copy:
                 self.log.emit("[INFO] Tất cả video đã hoàn tất hoặc thất bại.")
                 break
-            
+
             # If no jobs yet and submission still running, wait
             if not jobs_copy and not submission_complete.is_set():
                 self.log.emit("[INFO] Waiting for video submissions to create jobs...")
@@ -420,13 +419,13 @@ class VideoGenerationWorker(QThread):
 
             # Multi-account batch check: group jobs by account
             rs = {}
-            
+
             try:
                 if account_mgr.is_multi_account_enabled():
                     # Group jobs by account
                     jobs_by_account = {}
                     jobs_without_account = []
-                    
+
                     for job_info in jobs_copy:
                         job_dict = job_info['body']
                         acc_name = job_dict.get("account_name")
@@ -436,7 +435,7 @@ class VideoGenerationWorker(QThread):
                             jobs_by_account[acc_name].append(job_info)
                         else:
                             jobs_without_account.append(job_info)
-                    
+
                     # Check each account's operations with its own client
                     for acc_name, account_jobs in jobs_by_account.items():
                         # Find the account
@@ -445,14 +444,14 @@ class VideoGenerationWorker(QThread):
                             if acc.name == acc_name:
                                 account = acc
                                 break
-                        
+
                         if not account:
                             self.log.emit(f"[WARN] Account {acc_name} not found, skipping")
                             continue
-                        
+
                         # Create client for this account
                         account_client = LabsFlowClient(account.tokens, on_event=on_labs_event)
-                        
+
                         # Collect operations and metadata for this account
                         account_names = []
                         account_metadata = {}
@@ -462,7 +461,7 @@ class VideoGenerationWorker(QThread):
                             op_meta = job_dict.get("operation_metadata", {})
                             if op_meta:
                                 account_metadata.update(op_meta)
-                        
+
                         # Check this account's operations with project_id
                         if account_names:
                             try:
@@ -472,7 +471,7 @@ class VideoGenerationWorker(QThread):
                                 rs.update(account_rs)
                             except Exception as e:
                                 self.log.emit(f"[WARN] Check error for {acc_name}: {e}")
-                    
+
                     # Check jobs without account using fallback (if any)
                     if jobs_without_account:
                         fallback_names = []
@@ -483,7 +482,7 @@ class VideoGenerationWorker(QThread):
                             op_meta = job_dict.get("operation_metadata", {})
                             if op_meta:
                                 fallback_metadata.update(op_meta)
-                        
+
                         if fallback_names:
                             try:
                                 # Use the last client in cache as fallback
@@ -503,7 +502,7 @@ class VideoGenerationWorker(QThread):
                         op_meta = job_dict.get("operation_metadata", {})
                         if op_meta:
                             metadata.update(op_meta)
-                    
+
                     # Use the last client in cache
                     client = list(client_cache.values())[-1] if client_cache else None
                     if client and names:
@@ -713,7 +712,7 @@ class VideoGenerationWorker(QThread):
         title = p["title"]
         dir_videos = p["dir_videos"]
         thumbs_dir = os.path.join(dir_videos, "thumbs")
-        
+
         accounts = account_mgr.get_enabled_accounts()
         num_accounts = len(accounts)
         total_scenes = len(p["scenes"])
@@ -834,12 +833,12 @@ class VideoGenerationWorker(QThread):
 
             # Multi-account batch check: group jobs by account
             rs = {}
-            
+
             try:
                 # Group jobs by account
                 jobs_by_account = {}
                 jobs_without_account = []
-                
+
                 for job_info in jobs:
                     job_dict = job_info['body']
                     acc_name = job_dict.get("account_name")
@@ -849,7 +848,7 @@ class VideoGenerationWorker(QThread):
                         jobs_by_account[acc_name].append(job_info)
                     else:
                         jobs_without_account.append(job_info)
-                
+
                 # Check each account's operations with its own client
                 for acc_name, account_jobs in jobs_by_account.items():
                     # Find the account
@@ -858,18 +857,18 @@ class VideoGenerationWorker(QThread):
                         if acc.name == acc_name:
                             account = acc
                             break
-                    
+
                     if not account:
                         self.log.emit(f"[WARN] Account {acc_name} not found, skipping")
                         continue
-                    
+
                     # Create event handler for diagnostic logging
                     def on_labs_event(event):
                         self._handle_labs_event(event)
-                    
+
                     # Create client for this account
                     account_client = LabsFlowClient(account.tokens, on_event=on_labs_event)
-                    
+
                     # Collect operations and metadata for this account
                     account_names = []
                     account_metadata = {}
@@ -879,7 +878,7 @@ class VideoGenerationWorker(QThread):
                         op_meta = job_dict.get("operation_metadata", {})
                         if op_meta:
                             account_metadata.update(op_meta)
-                    
+
                     # Check this account's operations with project_id
                     if account_names:
                         try:
@@ -889,11 +888,11 @@ class VideoGenerationWorker(QThread):
                             rs.update(account_rs)
                         except Exception as e:
                             self.log.emit(f"[WARN] Check error for {acc_name}: {e}")
-                
+
                 # Check jobs without account using fallback (if any)
                 if jobs_without_account:
                     self.log.emit(f"[WARN] {len(jobs_without_account)} jobs without account info")
-                    
+
             except Exception as e:
                 self.log.emit(f"[WARN] Lỗi kiểm tra trạng thái (vòng {poll_round + 1}): {e}")
                 time.sleep(10)
@@ -1157,19 +1156,19 @@ class VideoGenerationWorker(QThread):
                     "model": model_key,
                     "aspect_ratio": ratio
                 }
-                
+
                 # Store bearer token for multi-account download support
                 if account.tokens and len(account.tokens) > 0:
                     body["bearer_token"] = account.tokens[0]
-                
+
                 # Store account info for multi-account batch checking
                 body["account_name"] = account.name
                 body["project_id"] = account.project_id
                 body["tokens"] = account.tokens
-                
+
                 try:
                     rc = client.start_one(
-                        body, model_key, ratio, scene["prompt"], 
+                        body, model_key, ratio, scene["prompt"],
                         copies=copies, project_id=account.project_id
                     )
 
@@ -1196,7 +1195,7 @@ class VideoGenerationWorker(QThread):
                                 "thumb": "",
                                 "dir": dir_videos
                             }
-                            
+
                             # Emit card to UI
                             results_queue.put(("card", card))
 
