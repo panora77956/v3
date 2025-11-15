@@ -143,7 +143,10 @@ class VideoGenerationWorker(QThread):
             self.error_occurred.emit(str(e))
 
     def _run_video(self):
-        """Main video generation logic."""
+        """Main video generation logic with parallel submission and download."""
+        import threading
+        from queue import Queue
+        
         p = self.payload
         st = cfg.load()
 
@@ -190,167 +193,193 @@ class VideoGenerationWorker(QThread):
 
         total_scenes = len(p["scenes"])
         jobs = []
+        jobs_lock = threading.Lock()  # Thread-safe access to jobs list
         client_cache = {}
+        submission_complete = threading.Event()  # Signal when all submissions are done
 
         # Event handler for diagnostic logging
         def on_labs_event(event):
             self._handle_labs_event(event)
 
-        # Start video generation for each scene
-        for scene_idx, scene in enumerate(p["scenes"], start=1):
-            if self.cancelled:
-                self.error_occurred.emit("Generation cancelled by user")
-                return
+        # Submission thread: submits video generation requests with small delays
+        def submission_thread():
+            """Submit video generation requests for all scenes."""
+            try:
+                for scene_idx, scene in enumerate(p["scenes"], start=1):
+                    if self.cancelled:
+                        self.log.emit("[INFO] Submission cancelled by user")
+                        break
 
-            # Use actual_scene_num if provided (for retry), otherwise use scene_idx
-            actual_scene_num = scene.get("actual_scene_num", scene_idx)
+                    # Use actual_scene_num if provided (for retry), otherwise use scene_idx
+                    actual_scene_num = scene.get("actual_scene_num", scene_idx)
 
-            # Update progress: Starting scene
-            self.progress_updated.emit(
-                actual_scene_num - 1, total_scenes, f"Submitting scene {actual_scene_num}..."
-            )
-
-            ratio = scene["aspect"]
-            model_key = p.get("model_key", "")
-
-            # Get account for this scene (multi-account or legacy)
-            if account_mgr.is_multi_account_enabled():
-                # Use round-robin account selection for this scene
-                # Use scene_idx - 1 for round-robin (0-indexed), but actual_scene_num for display
-                account = account_mgr.get_account_for_scene(scene_idx - 1)
-                if not account:
-                    self.log.emit("[ERROR] No enabled accounts available!")
-                    self.error_occurred.emit("No enabled accounts")
-                    return
-
-                tokens = account.tokens
-                project_id = account.project_id
-
-                # Validate tokens
-                if not tokens:
-                    self.log.emit(f"[ERROR] Account '{account.name}' has no tokens!")
-                    self.error_occurred.emit(f"Account '{account.name}' has no tokens")
-                    return
-
-                # Validate project_id
-                if not project_id or not isinstance(project_id, str) or not project_id.strip():
-                    self.log.emit(f"[ERROR] Account '{account.name}' has invalid project_id!")
-                    self.error_occurred.emit(
-                        f"Account '{account.name}' has invalid project_id"
+                    # Update progress: Starting scene
+                    self.progress_updated.emit(
+                        actual_scene_num - 1, total_scenes, f"Submitting scene {actual_scene_num}..."
                     )
-                    return
 
-                project_id = project_id.strip()
-                proj_id_short = (
-                    project_id[:12] + "..." if len(project_id) > 12
-                    else project_id
-                )
-                self.log.emit(
-                    f"[INFO] Scene {actual_scene_num}: Using account '{account.name}' | "
-                    f"Project: {proj_id_short}"
-                )
-            else:
-                # Legacy mode: use old tokens and default_project_id
-                tokens = st.get("tokens") or []
-                if not tokens:
-                    self.log.emit(
-                        "[ERROR] No Google Labs tokens configured! "
-                        "Please add tokens in API Credentials."
+                    ratio = scene["aspect"]
+                    model_key = p.get("model_key", "")
+
+                    # Get account for this scene (multi-account or legacy)
+                    if account_mgr.is_multi_account_enabled():
+                        # Use round-robin account selection for this scene
+                        account = account_mgr.get_account_for_scene(scene_idx - 1)
+                        if not account:
+                            self.log.emit("[ERROR] No enabled accounts available!")
+                            self.error_occurred.emit("No enabled accounts")
+                            return
+
+                        tokens = account.tokens
+                        project_id = account.project_id
+
+                        # Validate tokens
+                        if not tokens:
+                            self.log.emit(f"[ERROR] Account '{account.name}' has no tokens!")
+                            self.error_occurred.emit(f"Account '{account.name}' has no tokens")
+                            return
+
+                        # Validate project_id
+                        if not project_id or not isinstance(project_id, str) or not project_id.strip():
+                            self.log.emit(f"[ERROR] Account '{account.name}' has invalid project_id!")
+                            self.error_occurred.emit(
+                                f"Account '{account.name}' has invalid project_id"
+                            )
+                            return
+
+                        project_id = project_id.strip()
+                        proj_id_short = (
+                            project_id[:12] + "..." if len(project_id) > 12
+                            else project_id
+                        )
+                        self.log.emit(
+                            f"[INFO] Scene {actual_scene_num}: Using account '{account.name}' | "
+                            f"Project: {proj_id_short}"
+                        )
+                    else:
+                        # Legacy mode: use old tokens and default_project_id
+                        tokens = st.get("tokens") or []
+                        if not tokens:
+                            self.log.emit(
+                                "[ERROR] No Google Labs tokens configured! "
+                                "Please add tokens in API Credentials."
+                            )
+                            self.error_occurred.emit("No tokens configured")
+                            return
+
+                        # Get project_id with strict validation and fallback
+                        project_id = st.get("default_project_id")
+                        if not project_id or not isinstance(project_id, str) or not project_id.strip():
+                            # Use fallback if missing/invalid
+                            project_id = DEFAULT_PROJECT_ID
+                            self.log.emit(f"[INFO] Using default project_id: {project_id}")
+                        else:
+                            project_id = project_id.strip()
+                            self.log.emit(f"[INFO] Using configured project_id: {project_id}")
+
+                        # Validate project_id format (should be UUID-like)
+                        if len(project_id) < 10:
+                            self.log.emit(
+                                f"[WARN] Project ID '{project_id}' seems invalid (too short), "
+                                "using default"
+                            )
+                            project_id = DEFAULT_PROJECT_ID
+
+                    # Create or reuse client for this project_id
+                    if project_id not in client_cache:
+                        client_cache[project_id] = LabsFlowClient(tokens, on_event=on_labs_event)
+                    client = client_cache[project_id]
+
+                    # Single API call with copies parameter
+                    body = {
+                        "prompt": scene["prompt"],
+                        "copies": copies,
+                        "model": model_key,
+                        "aspect_ratio": ratio
+                    }
+                    
+                    # Store bearer token for multi-account download support
+                    # Extract the first token from the tokens list if available
+                    if tokens and len(tokens) > 0:
+                        body["bearer_token"] = tokens[0]
+                    
+                    # Store account info for multi-account batch checking
+                    if account_mgr.is_multi_account_enabled():
+                        body["account_name"] = account.name
+                        body["project_id"] = project_id
+                        body["tokens"] = tokens
+                    
+                    self.log.emit(f"[INFO] Start scene {actual_scene_num} with {copies} copies in one batch…")
+                    rc = client.start_one(
+                        body, model_key, ratio, scene["prompt"], copies=copies, project_id=project_id
                     )
-                    self.error_occurred.emit("No tokens configured")
-                    return
 
-                # Get project_id with strict validation and fallback
-                project_id = st.get("default_project_id")
-                if not project_id or not isinstance(project_id, str) or not project_id.strip():
-                    # Use fallback if missing/invalid
-                    project_id = DEFAULT_PROJECT_ID
-                    self.log.emit(f"[INFO] Using default project_id: {project_id}")
-                else:
-                    project_id = project_id.strip()
-                    self.log.emit(f"[INFO] Using configured project_id: {project_id}")
+                    if rc > 0:
+                        # Only create cards for operations that actually exist in the API response
+                        actual_count = len(body.get("operation_names", []))
 
-                # Validate project_id format (should be UUID-like)
-                if len(project_id) < 10:
-                    self.log.emit(
-                        f"[WARN] Project ID '{project_id}' seems invalid (too short), "
-                        "using default"
-                    )
-                    project_id = DEFAULT_PROJECT_ID
+                        if actual_count < copies:
+                            self.log.emit(f"[WARN] Scene {actual_scene_num}: API returned {actual_count} operations but {copies} copies were requested")
 
-            # Create or reuse client for this project_id
-            if project_id not in client_cache:
-                client_cache[project_id] = LabsFlowClient(tokens, on_event=on_labs_event)
-            client = client_cache[project_id]
+                        # Create cards only for videos that actually exist
+                        for copy_idx in range(1, actual_count + 1):
+                            card = {
+                                "scene": actual_scene_num,
+                                "copy": copy_idx,
+                                "status": "PROCESSING",
+                                "json": scene["prompt"],
+                                "url": "",
+                                "path": "",
+                                "thumb": "",
+                                "dir": dir_videos
+                            }
+                            self.job_card.emit(card)
 
-            # Single API call with copies parameter
-            body = {
-                "prompt": scene["prompt"],
-                "copies": copies,
-                "model": model_key,
-                "aspect_ratio": ratio
-            }
-            
-            # Store bearer token for multi-account download support
-            # Extract the first token from the tokens list if available
-            if tokens and len(tokens) > 0:
-                body["bearer_token"] = tokens[0]
-            
-            # Store account info for multi-account batch checking
-            if account_mgr.is_multi_account_enabled():
-                body["account_name"] = account.name
-                body["project_id"] = project_id
-                body["tokens"] = tokens
-            
-            self.log.emit(f"[INFO] Start scene {actual_scene_num} with {copies} copies in one batch…")
-            rc = client.start_one(
-                body, model_key, ratio, scene["prompt"], copies=copies, project_id=project_id
-            )
+                            # Store card data with copy index for operation name mapping
+                            job_info = {
+                                'card': card,
+                                'body': body,
+                                'scene': actual_scene_num,
+                                'copy': copy_idx
+                            }
+                            with jobs_lock:
+                                jobs.append(job_info)
+                    else:
+                        # All copies failed to start
+                        for copy_idx in range(1, copies + 1):
+                            card = {
+                                "scene": actual_scene_num,
+                                "copy": copy_idx,
+                                "status": "FAILED_START",
+                                "error_reason": "Failed to start video generation",
+                                "json": scene["prompt"],
+                                "url": "",
+                                "path": "",
+                                "thumb": "",
+                                "dir": dir_videos
+                            }
+                            self.job_card.emit(card)
+                    
+                    # Small delay between submissions to avoid overwhelming the API
+                    time.sleep(2)
+                
+                # Signal that all submissions are complete
+                submission_complete.set()
+                self.log.emit(f"[INFO] All {total_scenes} scene submissions completed")
+                
+            except Exception as e:
+                import traceback
+                self.log.emit(f"[ERROR] Submission thread error: {e}")
+                self.log.emit(f"[DEBUG] {traceback.format_exc()}")
+                submission_complete.set()
 
-            if rc > 0:
-                # Only create cards for operations that actually exist in the API response
-                actual_count = len(body.get("operation_names", []))
-
-                if actual_count < copies:
-                    self.log.emit(f"[WARN] Scene {actual_scene_num}: API returned {actual_count} operations but {copies} copies were requested")
-
-                # Create cards only for videos that actually exist
-                for copy_idx in range(1, actual_count + 1):
-                    card = {
-                        "scene": actual_scene_num,
-                        "copy": copy_idx,
-                        "status": "PROCESSING",
-                        "json": scene["prompt"],
-                        "url": "",
-                        "path": "",
-                        "thumb": "",
-                        "dir": dir_videos
-                    }
-                    self.job_card.emit(card)
-
-                    # Store card data with copy index for operation name mapping
-                    job_info = {
-                        'card': card,
-                        'body': body,
-                        'scene': actual_scene_num,
-                        'copy': copy_idx
-                    }
-                    jobs.append(job_info)
-            else:
-                # All copies failed to start
-                for copy_idx in range(1, copies + 1):
-                    card = {
-                        "scene": actual_scene_num,
-                        "copy": copy_idx,
-                        "status": "FAILED_START",
-                        "error_reason": "Failed to start video generation",
-                        "json": scene["prompt"],
-                        "url": "",
-                        "path": "",
-                        "thumb": "",
-                        "dir": dir_videos
-                    }
-                    self.job_card.emit(card)
+        # Start submission thread
+        submit_thread = threading.Thread(target=submission_thread, daemon=True, name="VideoSubmission")
+        submit_thread.start()
+        
+        # Wait 30 seconds or until first submission completes before starting polling
+        self.log.emit("[INFO] Waiting 30 seconds before starting polling for completed videos...")
+        time.sleep(30)
 
         # Polling loop with improved error handling
         retry_count = {}
@@ -365,9 +394,20 @@ class VideoGenerationWorker(QThread):
                 self.log.emit("[INFO] Đã dừng xử lý theo yêu cầu người dùng.")
                 return
 
-            if not jobs:
+            # Thread-safe access to jobs list
+            with jobs_lock:
+                jobs_copy = jobs.copy()
+                
+            # Check if both submission is complete and no jobs remain
+            if submission_complete.is_set() and not jobs_copy:
                 self.log.emit("[INFO] Tất cả video đã hoàn tất hoặc thất bại.")
                 break
+            
+            # If no jobs yet and submission still running, wait
+            if not jobs_copy and not submission_complete.is_set():
+                self.log.emit("[INFO] Waiting for video submissions to create jobs...")
+                time.sleep(5)
+                continue
 
             # Update progress based on completed jobs
             completed_count = len(completed_videos)
@@ -387,7 +427,7 @@ class VideoGenerationWorker(QThread):
                     jobs_by_account = {}
                     jobs_without_account = []
                     
-                    for job_info in jobs:
+                    for job_info in jobs_copy:
                         job_dict = job_info['body']
                         acc_name = job_dict.get("account_name")
                         if acc_name:
@@ -457,7 +497,7 @@ class VideoGenerationWorker(QThread):
                     # Single-account mode (legacy)
                     names = []
                     metadata = {}
-                    for job_info in jobs:
+                    for job_info in jobs_copy:
                         job_dict = job_info['body']
                         names.extend(job_dict.get("operation_names", []))
                         op_meta = job_dict.get("operation_metadata", {})
@@ -474,7 +514,7 @@ class VideoGenerationWorker(QThread):
                 continue
 
             new_jobs = []
-            for job_info in jobs:
+            for job_info in jobs_copy:
                 card = job_info['card']
                 job_dict = job_info['body']
                 copy_idx = job_info['copy']
@@ -629,24 +669,32 @@ class VideoGenerationWorker(QThread):
                     self.job_card.emit(card)
                     new_jobs.append(job_info)
 
-            jobs = new_jobs
+            # Update the thread-safe jobs list
+            with jobs_lock:
+                jobs.clear()
+                jobs.extend(new_jobs)
 
-            if jobs:
+            if new_jobs:
                 poll_info = f"vòng {poll_round + 1}/120"
                 if poll_round >= 100:
-                    self.log.emit(f"[WARN] Đang chờ {len(jobs)} video ({poll_info}) - sắp hết thời gian chờ!")
+                    self.log.emit(f"[WARN] Đang chờ {len(new_jobs)} video ({poll_info}) - sắp hết thời gian chờ!")
                 else:
-                    self.log.emit(f"[INFO] Đang chờ {len(jobs)} video ({poll_info})...")
+                    self.log.emit(f"[INFO] Đang chờ {len(new_jobs)} video ({poll_info})...")
                 time.sleep(5)
 
         # Handle timeout
-        if jobs:
-            for job_info in jobs:
+        with jobs_lock:
+            remaining_jobs = jobs.copy()
+        if remaining_jobs:
+            for job_info in remaining_jobs:
                 card = job_info['card']
                 card["status"] = "TIMEOUT"
                 card["error_reason"] = "Video generation timed out"
                 self.job_card.emit(card)
                 self.log.emit(f"[TIMEOUT] Scene {card['scene']} Copy {card['copy']}: Generation timed out")
+
+        # Wait for submission thread to complete
+        submit_thread.join(timeout=10.0)
 
         # Emit completion signal
         self.all_completed.emit(completed_videos)
