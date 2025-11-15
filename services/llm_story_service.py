@@ -2506,65 +2506,102 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
     
     report_progress("Metadata đã tạo xong", 25)
     
-    # Step 2: Generate scenes one by one
+    # Step 2: Generate scenes in parallel batches for better performance
     scenes = []
     character_bible = metadata.get("character_bible", [])
     outline = metadata.get("outline_vi", "")
     
-    for scene_num in range(1, n + 1):
-        # Calculate progress percentage (25% to 90%)
-        scene_progress = 25 + int((scene_num / n) * 65)
-        report_progress(f"Đang tạo cảnh {scene_num}/{n}...", scene_progress)
+    # OPTIMIZATION: Use parallel generation with batches
+    # Batch size balances parallelism with context dependencies
+    # Larger batches = faster but less context from recent scenes
+    BATCH_SIZE = 5  # Generate up to 5 scenes in parallel
+    
+    import concurrent.futures
+    
+    scene_num = 1
+    while scene_num <= n:
+        # Determine batch size (handle remainder at end)
+        batch_end = min(scene_num + BATCH_SIZE - 1, n)
+        batch_size = batch_end - scene_num + 1
         
-        try:
-            scene = _generate_single_scene(
-                scene_num=scene_num,
-                total_scenes=n,
-                idea=idea,
-                style=style,
-                output_lang=output_lang,
-                duration=per[scene_num - 1],
-                previous_scenes=scenes,
-                character_bible=character_bible,
-                outline=outline,
-                provider=provider,
-                api_key=api_key,
-                progress_callback=progress_callback,
-                domain=domain,
-                topic=topic
-            )
-            
-            # Ensure duration is set correctly
-            scene["duration"] = int(per[scene_num - 1])
-            scenes.append(scene)
-            
-            report_progress(f"✓ Cảnh {scene_num}/{n} hoàn tất", scene_progress)
-            
-        except Exception as e:
-            report_progress(f"⚠ Lỗi tại cảnh {scene_num}: {str(e)}", scene_progress)
-            # Try one more time
+        batch_progress_start = 25 + int(((scene_num - 1) / n) * 65)
+        report_progress(f"Đang tạo batch cảnh {scene_num}-{batch_end}/{n} song song...", batch_progress_start)
+        
+        # Create tasks for parallel execution
+        def generate_scene_with_retry(scene_idx):
+            """Generate a single scene with retry logic"""
             try:
                 scene = _generate_single_scene(
-                    scene_num=scene_num,
+                    scene_num=scene_idx,
                     total_scenes=n,
                     idea=idea,
                     style=style,
                     output_lang=output_lang,
-                    duration=per[scene_num - 1],
-                    previous_scenes=scenes,
+                    duration=per[scene_idx - 1],
+                    previous_scenes=scenes,  # Use scenes generated so far for context
                     character_bible=character_bible,
                     outline=outline,
                     provider=provider,
                     api_key=api_key,
-                    progress_callback=progress_callback,
+                    progress_callback=None,  # Disable per-scene progress to avoid conflicts
                     domain=domain,
                     topic=topic
                 )
-                scene["duration"] = int(per[scene_num - 1])
+                scene["duration"] = int(per[scene_idx - 1])
+                return (scene_idx, scene, None)
+            except Exception as e:
+                # Try one more time
+                try:
+                    scene = _generate_single_scene(
+                        scene_num=scene_idx,
+                        total_scenes=n,
+                        idea=idea,
+                        style=style,
+                        output_lang=output_lang,
+                        duration=per[scene_idx - 1],
+                        previous_scenes=scenes,
+                        character_bible=character_bible,
+                        outline=outline,
+                        provider=provider,
+                        api_key=api_key,
+                        progress_callback=None,
+                        domain=domain,
+                        topic=topic
+                    )
+                    scene["duration"] = int(per[scene_idx - 1])
+                    return (scene_idx, scene, None)
+                except Exception as retry_error:
+                    return (scene_idx, None, str(retry_error))
+        
+        # Execute batch in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+            # Submit all scenes in this batch
+            futures = []
+            for i in range(scene_num, batch_end + 1):
+                future = executor.submit(generate_scene_with_retry, i)
+                futures.append(future)
+            
+            # Collect results in order
+            batch_results = []
+            for future in concurrent.futures.as_completed(futures):
+                scene_idx, scene, error = future.result()
+                batch_results.append((scene_idx, scene, error))
+            
+            # Sort by scene index to maintain order
+            batch_results.sort(key=lambda x: x[0])
+            
+            # Add scenes to list in order and check for errors
+            for scene_idx, scene, error in batch_results:
+                if error:
+                    raise RuntimeError(f"Failed to generate scene {scene_idx} after retry: {error}")
                 scenes.append(scene)
-                report_progress(f"✓ Cảnh {scene_num}/{n} hoàn tất (retry)", scene_progress)
-            except Exception as retry_error:
-                raise RuntimeError(f"Failed to generate scene {scene_num} after retry: {str(retry_error)}")
+                
+                # Report individual scene completion
+                scene_progress = 25 + int((scene_idx / n) * 65)
+                report_progress(f"✓ Cảnh {scene_idx}/{n} hoàn tất", scene_progress)
+        
+        # Move to next batch
+        scene_num = batch_end + 1
     
     # Step 3: Combine metadata and scenes
     report_progress("Đang xác thực kịch bản...", 92)
