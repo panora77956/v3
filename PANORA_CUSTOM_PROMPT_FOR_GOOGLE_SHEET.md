@@ -248,3 +248,92 @@ Nếu bạn có custom prompts khác (không phải PANORA), áp dụng cùng c�
 4. Hệ thống tự động xử lý
 
 **Lưu ý**: `Type` column phải là `custom` (chữ thường) để được nhận diện.
+
+---
+
+## 🆕 Cải Tiến Mới (Latest Enhancements)
+
+### v7.4.0 - Tăng Cường Tuân Thủ Custom Prompt
+
+Đã cải tiến hệ thống để tuân thủ CHẶT CHẼ hơn các quy tắc trong custom prompt:
+
+#### 1. **Tách Biệt Rõ Ràng: Voiceover vs Visual**
+- ✅ `voiceover` = CHỈ LỜI THOẠI (những gì người tường thuật NÓI)
+- ✅ `prompt` = CHỈ MÔ TẢ HÌNH ẢNH (những gì xuất hiện trên màn hình)
+- ❌ CẤM trộn lẫn: Không viết mô tả hình ảnh trong voiceover
+- ❌ CẤM trộn lẫn: Không viết lời thoại trong prompt
+
+**Ví dụ SAI**:
+```
+voiceover: "Bạn thấy hologram 3D của não bộ với màu cyan hiển thị lên"
+```
+
+**Ví dụ ĐÚNG**:
+```
+prompt: "3D hologram của não bộ màu cyan, data overlay hiển thị 'Cortisol +200%'"
+voiceover: "Sau 24 giờ không ngủ, não của bạn bắt đầu tạo ra ảo giác."
+```
+
+#### 2. **Enforcement Header Mạnh Mẽ Hơn**
+Hệ thống bây giờ thêm header cảnh báo TRƯỚC custom prompt:
+- ⚠️ Liệt kê rõ ràng tất cả yêu cầu bắt buộc
+- ⚠️ Nhắc nhở phân tách voiceover và visual
+- ⚠️ Yêu cầu đọc TOÀN BỘ custom prompt trước khi sinh nội dung
+
+#### 3. **Validation Nâng Cao**
+Hệ thống tự động phát hiện vi phạm:
+- ✅ Phát hiện tên nhân vật (Anya, Kai, Liam, Dr. Sharma, etc.)
+- ✅ Phát hiện mô tả ngoại hình (áo blouse, tóc đen, kính gọng)
+- ✅ Phát hiện cấu trúc ACT I/II/III (vi phạm cấu trúc 5 giai đoạn)
+- ✅ Phát hiện mô tả người (nhà khoa học, bệnh nhân, y tá)
+- ✅ Hỗ trợ cả tiếng Việt và tiếng Anh
+
+#### 4. **Schema Prompt Cải Tiến**
+Mỗi field trong JSON schema bây giờ có chỉ dẫn rõ ràng:
+```json
+{
+  "prompt_vi": "CHỈ MÔ TẢ HÌNH ẢNH - Mô tả những gì xuất hiện trên màn hình...",
+  "voiceover_vi": "CHỈ LỜI THOẠI - Những gì người tường thuật NÓI..."
+}
+```
+
+#### 5. **Checklist Nhắc Nhở Cuối Schema**
+8 điểm nhắc nhở quan trọng được thêm vào cuối mỗi prompt:
+1. character_bible PHẢI là mảng rỗng []
+2. prompt = CHỈ visual descriptions
+3. voiceover = CHỈ spoken narration
+4. KHÔNG trộn mô tả visual vào voiceover
+5. KHÔNG trộn dialogue vào visual prompts
+6. KHÔNG có tên nhân vật (Anya, Kai, Dr. Sharma)
+7. CHỈ dùng ngôi thứ hai (Bạn, Cơ thể của bạn)
+8. Tuân thủ cấu trúc 5 giai đoạn
+
+### Kết Quả Mong Đợi
+
+Với các cải tiến này, video được tạo ra sẽ:
+- ✅ **KHÔNG** có nhân vật hư cấu (Anya, Kai, etc.)
+- ✅ **KHÔNG** trộn lẫn mô tả cảnh vào lời thoại
+- ✅ **TUÂN THỦ** ngôi thứ hai (Bạn, Cơ thể của bạn, Não của bạn)
+- ✅ **TUÂN THỦ** cấu trúc 5 giai đoạn (không phải ACT I/II/III)
+- ✅ **PHÂN TÁCH** rõ ràng giữa voiceover và visual description
+
+### Nếu Vẫn Còn Vấn Đề
+
+Nếu sau khi cập nhật mà vẫn thấy vi phạm:
+
+1. **Kiểm tra custom prompt trong Google Sheet**:
+   - Đảm bảo cột "Type" = "custom"
+   - Đảm bảo prompt có đủ các phần: CẤM TẠO NHÂN VẬT, CRITICAL SEPARATION
+
+2. **Chạy lại validation**:
+   ```bash
+   python3 examples/example_custom_prompt_usage.py
+   ```
+
+3. **Kiểm tra log**:
+   - Tìm "[INFO] Using CUSTOM system prompt for..."
+   - Tìm validation warnings trong output
+
+4. **Regenerate video**:
+   - Xóa video cũ
+   - Tạo lại với prompt đã cập nhật
