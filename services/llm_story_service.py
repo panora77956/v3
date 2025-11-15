@@ -891,21 +891,29 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
         # Add enforcement header for ALL custom prompts to strengthen rule adherence
         enforcement_header = """
 ═══════════════════════════════════════════════════════════════
-⚠️⚠️⚠️ CRITICAL ENFORCEMENT RULES ⚠️⚠️⚠️
+⚠️⚠️⚠️ CRITICAL ENFORCEMENT RULES - MUST OBEY ⚠️⚠️⚠️
 ═══════════════════════════════════════════════════════════════
 
-This is a CUSTOM PROMPT with specific requirements. You MUST strictly follow 
-ALL rules in the custom system prompt below. Any deviation will cause rejection.
+This is a CUSTOM PROMPT with STRICT requirements. You MUST follow ALL rules 
+in the custom system prompt below. ANY DEVIATION WILL CAUSE REJECTION.
 
-Key Requirements for Custom Prompts:
+MANDATORY REQUIREMENTS:
 1. Follow the EXACT structure specified in the prompt (e.g., 5-stage, ACT-based, etc.)
 2. Use the EXACT narrative voice specified (second-person, third-person, etc.)
-3. Respect ALL prohibitions explicitly stated (character creation, descriptions, etc.)
-4. Generate content matching the specific domain expertise required
+3. Respect ALL prohibitions (character creation, descriptions, etc.)
+4. Separate voiceover (what is SPOKEN) from visual prompts (what is SEEN)
 
-⚠️ IF THE CUSTOM PROMPT SAYS "NO CHARACTERS", DO NOT CREATE ANY CHARACTERS
-⚠️ IF THE CUSTOM PROMPT SPECIFIES A STRUCTURE, USE THAT EXACT STRUCTURE
-⚠️ READ THE ENTIRE CUSTOM PROMPT CAREFULLY BEFORE GENERATING
+⚠️ IF CUSTOM PROMPT SAYS "NO CHARACTERS" → character_bible MUST be []
+⚠️ IF CUSTOM PROMPT SAYS "SECOND-PERSON" → Use "Bạn", "You" ONLY
+⚠️ IF CUSTOM PROMPT SAYS "5 STAGES" → Use exactly that structure
+⚠️ VOICEOVER = What narrator SAYS (dialogue only)
+⚠️ PROMPT = What viewer SEES (visuals only)
+
+BEFORE GENERATING:
+1. Read the ENTIRE custom prompt below
+2. Identify all prohibitions (CẤM, DO NOT, NO, etc.)
+3. Identify required structure and voice
+4. Generate content following those rules EXACTLY
 
 ═══════════════════════════════════════════════════════════════
 """
@@ -933,11 +941,11 @@ OUTPUT FORMAT - Return ONLY valid JSON (no extra text):
   "emotional_arc": "Cung cảm xúc theo 5 giai đoạn",
   "scenes": [
     {{
-      "prompt_vi": "Mô tả CHÍNH XÁC hình ảnh y khoa/khoa học - hologram 3D, simulation, data overlay - TUYỆT ĐỐI KHÔNG có tên nhân vật hay mô tả người",
-      "prompt_tgt": "EXACT visual description in {target_language} - 3D hologram, medical simulation, data overlay - ABSOLUTELY NO character names or person descriptions",
+      "prompt_vi": "CHỈ MÔ TẢ HÌNH ẢNH - Mô tả những gì xuất hiện trên màn hình: hologram 3D, simulation, data overlay, màu sắc (cyan/orange), camera movement. KHÔNG viết lời thoại. KHÔNG có tên nhân vật. KHÔNG mô tả người.",
+      "prompt_tgt": "VISUAL ONLY - What appears on screen: 3D hologram, simulation, data overlay, colors (cyan/orange), camera movement. NO dialogue. NO character names. NO person descriptions.",
       "duration": {per[0] if per else 8},
-      "voiceover_vi": "Lời thoại ngôi thứ hai bằng tiếng Việt (Bạn, Cơ thể của bạn, Não của bạn) - nói trực tiếp với khán giả",
-      "voiceover_tgt": "Second-person narration in {target_language} (You, Your body, Your brain) - directly addressing the audience",
+      "voiceover_vi": "CHỈ LỜI THOẠI - Những gì người tường thuật NÓI. Dùng ngôi thứ hai (Bạn, Cơ thể của bạn, Não của bạn). KHÔNG mô tả hình ảnh. KHÔNG có tên nhân vật.",
+      "voiceover_tgt": "DIALOGUE ONLY - What the narrator SAYS. Use second-person (You, Your body, Your brain). NO visual descriptions. NO character names.",
       "location": "Không gian y khoa cụ thể (Medical space description) - KHÔNG có phòng thí nghiệm với người",
       "time_of_day": "Day/Night (nếu relevant)",
       "camera_shot": "Wide/Close-up/Zoom into hologram/Pan across data",
@@ -951,7 +959,17 @@ OUTPUT FORMAT - Return ONLY valid JSON (no extra text):
   ]
 }}
 
-REMINDER: Follow all rules from system prompt above. Total scenes = {n}.
+⚠️⚠️⚠️ CRITICAL REMINDERS ⚠️⚠️⚠️
+1. character_bible MUST be empty array []
+2. prompt_vi/prompt_tgt = ONLY visual descriptions (what you SEE on screen)
+3. voiceover_vi/voiceover_tgt = ONLY spoken narration (what you HEAR)
+4. DO NOT mix visual descriptions into voiceover
+5. DO NOT mix dialogue into visual prompts
+6. NO character names anywhere (Anya, Kai, Dr. Sharma, etc.)
+7. Use ONLY second-person narration (Bạn, Cơ thể của bạn)
+8. Follow 5-stage structure (VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH)
+
+Total scenes = {n}. Follow all rules from system prompt above.
 """
         
         # Return simplified prompt with enforcement + custom system prompt
@@ -2057,17 +2075,21 @@ def _validate_no_characters(script_data, domain=None, topic=None):
     # Common Vietnamese first names and titles
     forbidden_patterns = [
         # Vietnamese names (common first names)
-        r'\b(Anya|Liam|Kai|Mai|Minh|Hoa|Lan|Linh|Nam|Anh|Tuấn|Dũng|Hùng)\b',
-        # Titles
-        r'\b(Dr\.|Tiến sĩ|Bác sĩ|Y tá|Nhà khoa học|Chuyên gia)\b',
-        # English names
-        r'\b(Sharma|Chen|Smith|Johnson|Williams|Brown)\b',
-        # Character descriptors
-        r'\b(nhà khoa học|bệnh nhân|tình nguyện viên|đối tượng thử nghiệm|người phụ nữ|người đàn ông)\b',
+        r'\b(Anya|Liam|Kai|Mai|Minh|Hoa|Lan|Linh|Nam|Anh|Tuấn|Dũng|Hùng|Linh|Hương|Hà|Phương)\b',
+        # English/Western names
+        r'\b(Sharma|Chen|Smith|Johnson|Williams|Brown|Emma|Oliver|Sophia|James|Emily|Michael)\b',
+        # Titles and roles
+        r'\b(Dr\.|Tiến sĩ|Bác sĩ|Y tá|Nhà khoa học|Chuyên gia|Giáo sư|Prof\.|Cô|Chú|Anh|Chị)\b',
+        # Character descriptors (should not appear in PANORA)
+        r'\b(nhà khoa học|bệnh nhân|tình nguyện viên|đối tượng thử nghiệm|người phụ nữ|người đàn ông|người ta|con người)\b',
         # Appearance descriptions (should not appear)
-        r'\b(áo blouse|tóc đen|kính gọng|quần áo|giày dép)\b',
-        # ACT structure patterns (should not appear)
-        r'\b(ACT I|ACT II|ACT III|Scene \d+|Ngày \d+|Giai đoạn \d+)\b',
+        r'\b(áo blouse|áo trắng|tóc đen|tóc dài|kính gọng|quần áo|giày dép|đồng phục|khuôn mặt|gương mặt)\b',
+        # Lab/office with people descriptions
+        r'\b(phòng thí nghiệm với|phòng lab có|văn phòng với|bệnh viện có|người đứng|người ngồi)\b',
+        # ACT structure patterns (should not appear in 5-stage structure)
+        r'\b(ACT I|ACT II|ACT III|Act 1|Act 2|Act 3|Scene \d+:|Ngày \d+:|Giai đoạn \d+:)\b',
+        # Visual descriptions mixed into voiceover (check for scene description words)
+        r'(hologram.*màu|hiển thị.*số liệu|data overlay.*với|màn hình.*hiện)\s+(lên|ra)',
     ]
     
     # Fields to check
