@@ -1574,14 +1574,20 @@ class Text2VideoPanelV5(QWidget):
                     f"visual={c.get('visual_identity','')}"
                 )
 
-        ol_vi = data.get("outline_vi", "").strip()
+        # Helper to safely convert value to string (handles both str and list)
+        def safe_str(value):
+            if isinstance(value, list):
+                return "\n".join(str(item) for item in value)
+            return str(value) if value else ""
+
+        ol_vi = safe_str(data.get("outline_vi", "")).strip()
         if ol_vi:
             if parts:
                 parts.append("")  # Add blank line separator
             parts.append(ol_vi)
 
-        sp_vi = data.get("screenplay_vi", "").strip()
-        sp_tgt = data.get("screenplay_tgt", "").strip()
+        sp_vi = safe_str(data.get("screenplay_vi", "")).strip()
+        sp_tgt = safe_str(data.get("screenplay_tgt", "")).strip()
         if sp_vi or sp_tgt:
             if parts:
                 parts.append("")  # Add blank line separator
@@ -2521,7 +2527,14 @@ class Text2VideoPanelV5(QWidget):
                 return
 
             video_concept = self.ed_idea.toPlainText().strip()
-            screenplay = script_dict.get("screenplay_tgt", "") or script_dict.get("screenplay_vi", "")
+            
+            # Helper to safely convert value to string (handles both str and list)
+            def safe_str(value):
+                if isinstance(value, list):
+                    return "\n".join(str(item) for item in value)
+                return str(value) if value else ""
+            
+            screenplay = safe_str(script_dict.get("screenplay_tgt", "")) or safe_str(script_dict.get("screenplay_vi", ""))
             existing_bible = script_dict.get("character_bible", [])
 
             self._character_bible = create_character_bible(
