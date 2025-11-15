@@ -39,6 +39,7 @@ try:
     from services import sales_script_service as sscript
     from services import sales_video_service as svc
     from services import domain_prompts
+    from services import flow_image_service
     from ui.widgets.model_selector import ModelSelectorWidget
     from ui.widgets.scene_result_card import SceneResultCard
     from ui.widgets.history_widget import HistoryWidget  # History tab widget
@@ -51,6 +52,7 @@ except ImportError as e:
     svc = None
     HistoryWidget = None  # Fallback for missing history widget
     domain_prompts = None
+    flow_image_service = None
 
 # V5 Styling
 FONT_H2 = QFont("Segoe UI", 15, QFont.Bold)
@@ -137,6 +139,26 @@ def convert_aspect_ratio_to_whisk(ratio: str) -> str:
     return ratio_map.get(ratio, 'IMAGE_ASPECT_RATIO_PORTRAIT')
 
 
+def convert_aspect_ratio_to_flow(ratio: str) -> str:
+    """
+    Convert aspect ratio from '9:16' format to Flow API format
+    
+    Args:
+        ratio: Aspect ratio in format '9:16', '16:9', '1:1', etc.
+        
+    Returns:
+        Flow API aspect ratio constant
+    """
+    ratio_map = {
+        '9:16': 'IMAGE_ASPECT_RATIO_PORTRAIT',
+        '16:9': 'IMAGE_ASPECT_RATIO_LANDSCAPE',
+        '1:1': 'IMAGE_ASPECT_RATIO_SQUARE',
+        '4:3': 'IMAGE_ASPECT_RATIO_LANDSCAPE',
+        '3:4': 'IMAGE_ASPECT_RATIO_PORTRAIT',
+    }
+    return ratio_map.get(ratio, 'IMAGE_ASPECT_RATIO_PORTRAIT')
+
+
 class ImageGenerationWorker(QThread):
     """Worker thread for generating images"""
     progress = pyqtSignal(str)
@@ -144,13 +166,14 @@ class ImageGenerationWorker(QThread):
     thumbnail_ready = pyqtSignal(int, bytes)
     finished = pyqtSignal(bool)
 
-    def __init__(self, outline, cfg, model_paths, prod_paths, use_whisk=False, character_bible=None, account_mgr=None):
+    def __init__(self, outline, cfg, model_paths, prod_paths, use_whisk=False, character_bible=None, account_mgr=None, use_flow=False):
         super().__init__()
         self.outline = outline
         self.cfg = cfg
         self.model_paths = model_paths
         self.prod_paths = prod_paths
         self.use_whisk = use_whisk
+        self.use_flow = use_flow
         self.character_bible = character_bible
         self.account_mgr = account_mgr
         self.should_stop = False
@@ -180,9 +203,15 @@ class ImageGenerationWorker(QThread):
                 return
 
             aspect_ratio = self.cfg.get('ratio', '9:16')
-            # Set model based on user selection (Whisk or Gemini)
-            model = 'whisk' if self.use_whisk else 'gemini'
+            # Set model based on user selection (Whisk, Flow, or Gemini)
+            if self.use_flow:
+                model = 'flow'
+            elif self.use_whisk:
+                model = 'whisk'
+            else:
+                model = 'gemini'
             whisk_aspect_ratio = convert_aspect_ratio_to_whisk(aspect_ratio)
+            flow_aspect_ratio = convert_aspect_ratio_to_flow(aspect_ratio)
 
             self.progress.emit(f"[INFO] Sequential mode: {len(api_keys)} API keys, model: {model}")
 
@@ -215,7 +244,42 @@ class ImageGenerationWorker(QThread):
                         self.progress.emit(f"[WARNING] Failed to inject: {e}")
 
                 img_data = None
-                if self.use_whisk:
+                if self.use_flow:
+                    try:
+                        # Use Flow for image generation
+                        if flow_image_service:
+                            # Collect reference images
+                            reference_images = []
+                            if self.model_paths:
+                                reference_images.extend(self.model_paths[:3])  # Max 3 reference images
+                            if self.prod_paths and len(reference_images) < 3:
+                                reference_images.extend(self.prod_paths[:3 - len(reference_images)])
+                            
+                            if reference_images:
+                                self.progress.emit(f"Cảnh {scene.get('index')}: Flow với {len(reference_images)} reference images...")
+                                img_data = flow_image_service.generate_flow_image(
+                                    prompt=prompt,
+                                    reference_images=reference_images,
+                                    aspect_ratio=flow_aspect_ratio,
+                                    num_images=4,
+                                    log_callback=self.progress.emit,
+                                )
+                            else:
+                                self.progress.emit(f"Cảnh {scene.get('index')}: Flow text-only...")
+                                img_data = flow_image_service.generate_flow_image_text_only(
+                                    prompt=prompt,
+                                    aspect_ratio=flow_aspect_ratio,
+                                    num_images=4,
+                                    log_callback=self.progress.emit,
+                                )
+                            if img_data:
+                                self.progress.emit(f"Cảnh {scene.get('index')}: Flow ✓")
+                        else:
+                            self.progress.emit(f"[ERROR] Flow service không khả dụng")
+                    except Exception as e:
+                        self.progress.emit(f"Flow failed: {str(e)[:100]}")
+                        img_data = None
+                elif self.use_whisk:
                     try:
                         from services import whisk_service
                         # Use reference images if available, otherwise use text-only generation
@@ -357,9 +421,15 @@ class ImageGenerationWorker(QThread):
             self.progress.emit(f"🚀 Parallel mode: {num_accounts} accounts")
 
             aspect_ratio = self.cfg.get('ratio', '9:16')
-            # Set model based on user selection (Whisk or Gemini)
-            model = 'whisk' if self.use_whisk else 'gemini'
+            # Set model based on user selection (Flow, Whisk, or Gemini)
+            if self.use_flow:
+                model = 'flow'
+            elif self.use_whisk:
+                model = 'whisk'
+            else:
+                model = 'gemini'
             whisk_aspect_ratio = convert_aspect_ratio_to_whisk(aspect_ratio)
+            flow_aspect_ratio = convert_aspect_ratio_to_flow(aspect_ratio)
 
             if self.character_bible and hasattr(self.character_bible, 'characters'):
                 char_count = len(self.character_bible.characters)
@@ -392,7 +462,7 @@ class ImageGenerationWorker(QThread):
 
                 thread = threading.Thread(
                     target=self._process_image_batch,
-                    args=(account.tokens, batch, model, aspect_ratio, whisk_aspect_ratio, results_queue, i),
+                    args=(account.tokens, batch, model, aspect_ratio, whisk_aspect_ratio, flow_aspect_ratio, results_queue, i),
                     daemon=True,
                     name=f"ImageGen-{account.name}"
                 )
@@ -438,7 +508,7 @@ class ImageGenerationWorker(QThread):
             self.progress.emit(f"Lỗi parallel: {e}")
             self.finished.emit(False)
 
-    def _process_image_batch(self, api_keys, batch, model, aspect_ratio, whisk_aspect_ratio, results_queue, thread_id):
+    def _process_image_batch(self, api_keys, batch, model, aspect_ratio, whisk_aspect_ratio, flow_aspect_ratio, results_queue, thread_id):
         """Process a batch of scenes in a thread"""
         try:
             for scene_idx, scene in batch:
@@ -458,8 +528,36 @@ class ImageGenerationWorker(QThread):
                 img_data = None
                 error = None
 
+                # Use Flow if enabled
+                if self.use_flow:
+                    try:
+                        if flow_image_service:
+                            # Collect reference images
+                            reference_images = []
+                            if self.model_paths:
+                                reference_images.extend(self.model_paths[:3])
+                            if self.prod_paths and len(reference_images) < 3:
+                                reference_images.extend(self.prod_paths[:3 - len(reference_images)])
+                            
+                            if reference_images:
+                                img_data = flow_image_service.generate_flow_image(
+                                    prompt=prompt,
+                                    reference_images=reference_images,
+                                    aspect_ratio=flow_aspect_ratio,
+                                    num_images=4,
+                                    log_callback=None,
+                                )
+                            else:
+                                img_data = flow_image_service.generate_flow_image_text_only(
+                                    prompt=prompt,
+                                    aspect_ratio=flow_aspect_ratio,
+                                    num_images=4,
+                                    log_callback=None,
+                                )
+                    except Exception as e:
+                        error = f"Flow: {str(e)[:50]}"
                 # Use Whisk if enabled
-                if self.use_whisk:
+                elif self.use_whisk:
                     try:
                         from services import whisk_service
                         # Use reference images if available, otherwise use text-only generation
@@ -818,7 +916,7 @@ class VideoBanHangV5(QWidget):
         form.addWidget(self.cb_script_model, 1, 1)
 
         self.cb_image_model = make_widget(QComboBox)
-        self.cb_image_model.addItems(["Gemini", "Whisk"])
+        self.cb_image_model.addItems(["Gemini", "Whisk", "Flow"])
         lbl = QLabel("Tạo ảnh:")
         lbl.setFont(QFont("Segoe UI", 13, QFont.Bold))
         form.addWidget(lbl, 1, 2)
@@ -1793,7 +1891,9 @@ class VideoBanHangV5(QWidget):
             return
 
         cfg = self._collect_cfg()
-        use_whisk = cfg.get("image_model") == "Whisk"
+        image_model = cfg.get("image_model", "Gemini")
+        use_whisk = image_model == "Whisk"
+        use_flow = image_model == "Flow"
         model_paths = cfg.get("model_paths", [])
 
         # Track image generation start time
@@ -1811,7 +1911,7 @@ class VideoBanHangV5(QWidget):
         self.img_worker = ImageGenerationWorker(
             self.cache["outline"], cfg, model_paths,
             self.prod_paths, use_whisk, character_bible,
-            account_mgr=account_mgr
+            account_mgr=account_mgr, use_flow=use_flow
         )
 
         self.img_worker.progress.connect(self._append_log)
