@@ -2,6 +2,7 @@
 """
 Google Labs Flow Image Generation Service
 Supports generating images from reference images + prompts using Flow API
+Uses the same OAuth tokens configured in Settings for Google Labs video generation
 """
 import base64
 import random
@@ -22,85 +23,64 @@ class FlowImageError(Exception):
     pass
 
 
-def get_flow_bearer_token() -> str:
+def get_flow_tokens_and_project() -> tuple:
     """
-    Get bearer token (OAuth token) from config for Flow API
+    Get OAuth tokens and project ID from account manager
+    Uses the same tokens configured for Google Labs video generation
 
-    CRITICAL: This requires actual OAuth bearer token from Google Labs API,
-    NOT regular API keys. Bearer tokens are obtained through OAuth flow.
+    Returns:
+        Tuple of (tokens: List[str], project_id: str)
 
-    To obtain bearer token:
-    1. Open browser and login to labs.google
-    2. Navigate to https://labs.google/fx/tools/flow
-    3. Open Developer Tools (F12) -> Network tab
-    4. Make a generation request
-    5. Find request to "aisandbox-pa.googleapis.com"
-    6. Copy Authorization header value (starts with "Bearer ")
-    7. Add to config as 'flow_bearer_token' or 'labs_bearer_token'
-
-    Note: Bearer tokens typically expire after some time and need to be refreshed.
+    Raises:
+        FlowImageError: If no accounts are configured
     """
     try:
-        from services.core.config import load as load_config
+        from services.account_manager import get_account_manager
     except ImportError:
-        try:
-            from utils import config as cfg_module
-            load_config = cfg_module.load
-        except ImportError:
-            raise FlowImageError("Cannot load config module")
+        raise FlowImageError(
+            "Cannot import account_manager module.\n"
+            "Không thể import module account_manager."
+        )
 
-    # Try to get bearer token from config
-    cfg = load_config()
-    bearer_token = cfg.get('flow_bearer_token') or cfg.get('labs_bearer_token')
+    # Get account manager
+    account_mgr = get_account_manager()
 
-    if bearer_token:
-        return bearer_token
+    # Get enabled accounts
+    enabled_accounts = account_mgr.get_enabled_accounts() if account_mgr else []
 
-    # Fail early with clear error message
-    raise FlowImageError(
-        "Chưa cấu hình Bearer token cho Flow API / No Bearer token configured for Flow API.\n"
-        "Vui lòng thêm 'flow_bearer_token' hoặc 'labs_bearer_token' vào config.json.\n"
-        "Please configure 'flow_bearer_token' or 'labs_bearer_token' in config.json.\n"
-        "\n"
-        "Hướng dẫn lấy bearer token / How to obtain bearer token:\n"
-        "1. Mở trình duyệt và đăng nhập vào labs.google / Open browser and login to labs.google\n"
-        "2. Truy cập https://labs.google/fx/tools/flow\n"
-        "3. Mở Developer Tools (F12) → Network tab\n"
-        "4. Thực hiện một yêu cầu tạo ảnh / Make a generation request\n"
-        "5. Tìm request đến 'aisandbox-pa.googleapis.com'\n"
-        "   Find request to 'aisandbox-pa.googleapis.com'\n"
-        "6. Copy giá trị Authorization header (bắt đầu bằng 'Bearer ')\n"
-        "   Copy Authorization header value\n"
-        "7. Thêm vào config.json như: \"flow_bearer_token\": \"<token>\"\n"
-        "   (không cần 'Bearer ' prefix)\n"
-        "\n"
-        "LƯU Ý: Bearer tokens thường hết hạn sau một thời gian và cần được làm mới.\n"
-        "NOTE: Bearer tokens typically expire after some time and need to be refreshed."
-    )
+    if not enabled_accounts:
+        raise FlowImageError(
+            "Chưa cấu hình Google Labs accounts / No Google Labs accounts configured.\n"
+            "\n"
+            "Vui lòng cấu hình OAuth tokens trong tab Cài đặt (Settings):\n"
+            "Please configure OAuth tokens in the Settings tab:\n"
+            "\n"
+            "1. Mở tab Cài đặt (Settings)\n"
+            "   Open the Settings tab\n"
+            "\n"
+            "2. Tìm phần 'Google Labs Accounts (Multi-Account)'\n"
+            "   Find the 'Google Labs Accounts (Multi-Account)' section\n"
+            "\n"
+            "3. Thêm account với OAuth Flow tokens từ labs.google.com\n"
+            "   Add an account with OAuth Flow tokens from labs.google.com\n"
+            "\n"
+            "LƯU Ý: Tokens này dùng chung cho cả tạo video và tạo ảnh Flow.\n"
+            "NOTE: These tokens are shared for both video generation and Flow image generation."
+        )
 
+    # Get first enabled account
+    account = enabled_accounts[0]
 
-def get_flow_project_id() -> str:
-    """
-    Get Flow project ID from config
-    """
-    try:
-        from services.core.config import load as load_config
-    except ImportError:
-        try:
-            from utils import config as cfg_module
-            load_config = cfg_module.load
-        except ImportError:
-            # Use default project ID if config not available
-            return "88f510eb-f32a-40c2-adce-8f492f37a144"
+    if not account.tokens:
+        raise FlowImageError(
+            f"Account '{account.name}' không có OAuth tokens.\n"
+            f"Account '{account.name}' has no OAuth tokens.\n"
+            "\n"
+            "Vui lòng thêm tokens trong tab Cài đặt (Settings).\n"
+            "Please add tokens in the Settings tab."
+        )
 
-    cfg = load_config()
-    project_id = cfg.get('flow_project_id') or cfg.get('labs_project_id')
-
-    if project_id:
-        return project_id
-
-    # Return default project ID from example
-    return "88f510eb-f32a-40c2-adce-8f492f37a144"
+    return account.tokens, account.project_id
 
 
 def upload_flow_image(image_path: str, log_callback: Optional[Callable] = None) -> Optional[dict]:
@@ -159,8 +139,13 @@ def generate_flow_image(
             log_callback(msg)
 
     try:
-        bearer_token = get_flow_bearer_token()
-        project_id = get_flow_project_id()
+        # Get tokens and project ID from account manager (same as video generation)
+        tokens, project_id = get_flow_tokens_and_project()
+
+        # Use first token (can be enhanced to rotate through tokens)
+        bearer_token = tokens[0] if tokens else None
+        if not bearer_token:
+            raise FlowImageError("No OAuth tokens available in account")
 
         # Generate session ID (timestamp in milliseconds with semicolon prefix)
         session_id = f";{int(time.time() * 1000)}"

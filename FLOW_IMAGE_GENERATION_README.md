@@ -8,72 +8,52 @@ This feature allows you to generate images using Google Labs Flow API with refer
 - Use up to 3 reference images for consistent style and objects
 - Support for multiple aspect ratios (Portrait 9:16, Landscape 16:9, Square 1:1)
 - Integrated into Video Sales tab alongside Gemini and Whisk options
+- **Uses the same OAuth tokens configured for video generation** (no separate configuration needed!)
 
 ## Configuration
 
-To use Flow image generation, you need to configure the following in `config.json`:
+Flow image generation uses the **same Google Labs OAuth tokens** that you already configured for video generation in the Settings tab. No additional configuration in `config.json` is needed!
 
-### 1. Flow Bearer Token (Required)
+### How to Configure (Settings Tab)
 
-The Flow API requires an OAuth bearer token from Google Labs.
+1. Open the **Settings** tab in the application
+2. Find the **"Google Labs Accounts (Multi-Account)"** section
+3. Add or edit a Google Labs account with:
+   - **Account Name**: A friendly name (e.g., "Main Account")
+   - **Project ID**: Your Google Labs project ID
+   - **OAuth Flow Tokens**: Paste your OAuth tokens from labs.google.com (one per line)
 
-**How to obtain the bearer token:**
+**How to obtain OAuth Flow Tokens:**
 
 1. Open your browser and login to https://labs.google
-2. Navigate to https://labs.google/fx/tools/flow
+2. Navigate to https://labs.google/fx/tools/flow (or any Google Labs tool)
 3. Open Developer Tools (F12) → Network tab
-4. Make an image generation request in the Flow tool
-5. Find the request to `aisandbox-pa.googleapis.com` (look for `batchGenerateImages`)
-6. Copy the `Authorization` header value (it starts with "Bearer ")
-7. Add to config.json (without the "Bearer " prefix):
+4. Make a request (generate a video or image)
+5. Find the request to `aisandbox-pa.googleapis.com`
+6. Copy the `Authorization` header value (starts with "Bearer ")
+7. Remove the "Bearer " prefix and paste into the Settings tab
+
+**Note:** These OAuth tokens are shared between:
+- Video generation (Veo)
+- Flow image generation
+- Other Google Labs features
+
+**Token Expiration:** OAuth tokens typically expire after some time (hours/days). When they expire, simply obtain new tokens using the same process and update them in the Settings tab.
+
+### Legacy Configuration (Optional)
+
+If you prefer to configure tokens directly in `config.json`, you can still use the old method by adding a `labs_accounts` array. However, using the Settings tab is recommended as it provides a better user experience.
 
 ```json
 {
-  "flow_bearer_token": "ya29.a0ATi6K2swm1rfTOQmOl..."
-}
-```
-
-Alternative key name: `labs_bearer_token`
-
-**Note:** Bearer tokens typically expire after some time (hours/days) and will need to be refreshed.
-
-### 2. Flow Project ID (Optional)
-
-The Flow API requires a project ID. If not configured, a default will be used.
-
-**How to obtain the project ID:**
-
-1. Open Developer Tools on https://labs.google/fx/tools/flow
-2. Look at the URL when you create a project: `https://labs.google/fx/tools/flow/project/{PROJECT_ID}`
-3. Or check the Network tab for requests containing the project ID
-
-Add to config.json:
-
-```json
-{
-  "flow_project_id": "88f510eb-f32a-40c2-adce-8f492f37a144"
-}
-```
-
-Alternative key name: `labs_project_id`
-
-### Example config.json
-
-```json
-{
-  "tokens": [],
-  "google_keys": ["your-gemini-api-key"],
-  "elevenlabs_keys": [],
-  "flow_bearer_token": "ya29.a0ATi6K2swm1rfTOQmOl...",
-  "flow_project_id": "88f510eb-f32a-40c2-adce-8f492f37a144",
-  "default_project_id": "",
-  "download_root": "",
-  "vertex_ai": {
-    "enabled": false,
-    "project_id": "",
-    "location": "us-central1",
-    "use_vertex_first": true
-  }
+  "labs_accounts": [
+    {
+      "name": "Main Account",
+      "project_id": "88f510eb-f32a-40c2-adce-8f492f37a144",
+      "tokens": ["ya29.a0ATi6K2swm1rfTOQmOl..."],
+      "enabled": true
+    }
+  ]
 }
 ```
 
