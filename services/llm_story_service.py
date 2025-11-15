@@ -12,6 +12,13 @@ IDEA_RELEVANCE_THRESHOLD = 0.15  # Minimum word overlap ratio (15%)
 MIN_WORD_LENGTH = 3  # Minimum word length for relevance checking (filters out words with <3 chars)
 MAX_IDEA_DISPLAY_LENGTH = 100  # Maximum length for displaying idea in warnings
 
+# Parallel scene generation configuration
+# BATCH_SIZE controls how many scenes are generated in parallel for long videos
+# Higher values = faster generation but more API load and less scene-to-scene context
+# Lower values = slower generation but better continuity and lower API load
+# Recommended: 3-5 for optimal balance
+PARALLEL_SCENE_BATCH_SIZE = 5  # Generate up to 5 scenes in parallel (5x speedup)
+
 # Vietnamese character set for language detection
 VIETNAMESE_CHARS = set('àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ')
 
@@ -2514,7 +2521,7 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
     # OPTIMIZATION: Use parallel generation with batches
     # Batch size balances parallelism with context dependencies
     # Larger batches = faster but less context from recent scenes
-    BATCH_SIZE = 5  # Generate up to 5 scenes in parallel
+    BATCH_SIZE = PARALLEL_SCENE_BATCH_SIZE
     
     import concurrent.futures
     
@@ -2527,6 +2534,9 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
         batch_progress_start = 25 + int(((scene_num - 1) / n) * 65)
         report_progress(f"Đang tạo batch cảnh {scene_num}-{batch_end}/{n} song song...", batch_progress_start)
         
+        # Capture current scenes context for this batch (avoid closure issues)
+        batch_context = scenes.copy()
+        
         # Create tasks for parallel execution
         def generate_scene_with_retry(scene_idx):
             """Generate a single scene with retry logic"""
@@ -2538,7 +2548,7 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
                     style=style,
                     output_lang=output_lang,
                     duration=per[scene_idx - 1],
-                    previous_scenes=scenes,  # Use scenes generated so far for context
+                    previous_scenes=batch_context,  # Use fixed context for this batch
                     character_bible=character_bible,
                     outline=outline,
                     provider=provider,
@@ -2559,7 +2569,7 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
                         style=style,
                         output_lang=output_lang,
                         duration=per[scene_idx - 1],
-                        previous_scenes=scenes,
+                        previous_scenes=batch_context,
                         character_bible=character_bible,
                         outline=outline,
                         provider=provider,
@@ -2599,6 +2609,10 @@ Create 2-4 characters maximum. Focus on strong, memorable characters."""
                 # Report individual scene completion
                 scene_progress = 25 + int((scene_idx / n) * 65)
                 report_progress(f"✓ Cảnh {scene_idx}/{n} hoàn tất", scene_progress)
+        
+        # Report batch completion
+        batch_progress_end = 25 + int((batch_end / n) * 65)
+        report_progress(f"✓ Batch {scene_num}-{batch_end} hoàn tất - Đã tạo {batch_end}/{n} cảnh", batch_progress_end)
         
         # Move to next batch
         scene_num = batch_end + 1
