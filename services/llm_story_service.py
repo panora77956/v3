@@ -843,6 +843,78 @@ Nếu người dùng yêu cầu một hành động (như "con mèo nói chuyệ
 """
 
 
+def _enhance_panora_custom_prompt(custom_prompt: str, domain: str, topic: str) -> str:
+    """
+    Enhance PANORA custom prompt with additional guidance that preserves PR #95 fixes
+    even when the custom prompt is updated from Google Sheets.
+    
+    This function injects critical enhancements for PANORA custom prompts that would
+    otherwise be lost when domain_custom_prompts.py is regenerated from Google Sheets.
+    
+    Args:
+        custom_prompt: The base custom prompt from Google Sheets
+        domain: Domain name (e.g., "KHOA HỌC GIÁO DỤC")
+        topic: Topic name (e.g., "PANORA - Nhà Tường thuật Khoa học")
+    
+    Returns:
+        Enhanced custom prompt with CRITICAL SEPARATION and few-shot examples
+    """
+    # Only enhance PANORA custom prompts
+    if "PANORA" not in topic:
+        return custom_prompt
+    
+    # PANORA enhancements from PR #95 that must be preserved
+    panora_enhancements = """
+
+═══════════════════════════════════════════════════════════════
+⚠️⚠️⚠️ CRITICAL SEPARATION - BẮT BUỘC PHẢI TUÂN THỦ ⚠️⚠️⚠️
+═══════════════════════════════════════════════════════════════
+
+VOICEOVER = CHỈ LỜI THOẠI (what narrator SAYS)
+- Chỉ viết những gì người tường thuật NÓI
+- Dùng ngôi thứ hai: "Bạn", "Cơ thể của bạn"
+- Không mô tả hình ảnh trong voiceover
+- Ví dụ SAI: "Bạn thấy hologram 3D của não bộ với màu cyan"
+- Ví dụ ĐÚNG: "Giờ thứ 24. Não của bạn bắt đầu tạo ra ảo giác."
+
+PROMPT = CHỈ MÔ TẢ HÌNH ẢNH (what viewer SEES)
+- Chỉ mô tả những gì XUẤT HIỆN trên màn hình
+- Không viết lời thoại trong prompt
+- Ví dụ SAI: "Bạn cảm thấy mệt mỏi"
+- Ví dụ ĐÚNG: "3D hologram của não bộ màu cyan, data overlay hiển thị 'Cortisol +200%'"
+
+CẤM TUYỆT ĐỐI:
+- CẤM viết tên nhân vật (Anya, Kai, Dr. Sharma)
+- CẤM mô tả người ("nhà khoa học", "bệnh nhân", "áo blouse")
+- CẤM dùng cấu trúc ACT I/II/III
+- PHẢI dùng 5 giai đoạn: VẤN ĐỀ → PHẢN ỨNG → LEO THANG → GIỚI HẠN → TOÀN CẢNH
+
+═══════════════════════════════════════════════════════════════
+
+III. VÍ DỤ MẪU (FEW-SHOT EXAMPLE) - RẤT QUAN TRỌNG:
+
+VÍ DỤ SAI (Liệt kê, "Chán"):
+"Giai đoạn 1: Thiếu ngủ gây suy giảm nhận thức. Khả năng tập trung chậm lại."
+
+VÍ DỤ ĐÚNG (Kịch tính, "PANORA"):
+"Giờ thứ 24. Bạn không cảm thấy mệt. (Pause) Bạn cảm thấy... mình bất khả chiến bại. 
+Cơ thể của bạn, nhận ra mình đang bị tấn công, sẽ kích hoạt chế độ 'chiến đấu'. 
+(Pause) Nhưng đây là một cái bẫy."
+
+(BẠN PHẢI VIẾT KỊCH BẢN THEO PHONG CÁCH CỦA VÍ DỤ ĐÚNG)
+
+═══════════════════════════════════════════════════════════════
+**QUAN TRỌNG NHẤT**: 
+Nếu bạn tạo BẤT KỲ nhân vật nào với tên riêng, response sẽ bị TỪ CHỐI. 
+Nếu bạn dùng cấu trúc ACT I/II/III, response sẽ bị TỪ CHỐI. 
+PHẢI tuân thủ 5 giai đoạn và ngôi thứ hai.
+═══════════════════════════════════════════════════════════════
+"""
+    
+    # Return enhanced prompt with additions
+    return custom_prompt + panora_enhancements
+
+
 def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=None):
     # Get target language display name
     target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
@@ -892,6 +964,9 @@ def _schema_prompt(idea, style_vi, out_lang, n, per, mode, topic=None, domain=No
 
     # If custom prompt exists, use simplified prompt structure
     if custom_prompt:
+        # Enhance PANORA custom prompts with PR #95 enhancements (preserved across Google Sheets updates)
+        custom_prompt = _enhance_panora_custom_prompt(custom_prompt, domain, topic)
+        
         # Build minimal prompt with ONLY custom prompt + language + schema
         target_language = LANGUAGE_NAMES.get(out_lang, 'Vietnamese (Tiếng Việt)')
         
