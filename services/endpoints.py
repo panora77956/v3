@@ -3,3 +3,5 @@ UPLOAD_IMAGE_URL=f"{LABS_BASE}/v1:uploadUserImage"
 T2V_URL=f"{LABS_BASE}/v1/video:batchAsyncGenerateVideoText"
 I2V_URL=f"{LABS_BASE}/v1/video:batchAsyncGenerateVideoStartImage"
 BATCH_CHECK_URL=f"{LABS_BASE}/v1/video:batchCheckAsyncVideoGenerationStatus"
+# Flow image generation endpoint - requires project_id parameter
+FLOW_IMAGE_GEN_URL=LABS_BASE + "/v1/projects/{project_id}/flowMedia:batchGenerateImages"
