@@ -325,7 +325,8 @@ def combine_scene_prompts_for_single_video(scene_prompts: list, max_duration: fl
         combined["negatives"] = list(all_negatives)
     
     # Ensure character consistency is emphasized
-    if "character_details" in combined:
+    # Only add enhancement if character_details exists AND is not empty (skip for PANORA)
+    if "character_details" in combined and combined.get("character_details"):
         combined["character_details"] = (
             "CRITICAL: Maintain EXACT same character appearance throughout ALL scenes. "
             "Same face, same outfit, same hairstyle from beginning to end. "
@@ -430,19 +431,47 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     if location_context:
         location_lock = f"CRITICAL: All scenes must be in {location_context}. Do NOT change background, setting, or environment. Maintain exact location consistency across all scenes."
 
+    # FIX: Detect if custom prompt prohibits character creation (e.g., PANORA)
+    # Check domain and topic to see if characters should be excluded
+    requires_no_characters = False
+    if domain and topic:
+        try:
+            from services.domain_custom_prompts import get_custom_prompt
+            custom_prompt = get_custom_prompt(domain, topic)
+            
+            if custom_prompt:
+                custom_lower = custom_prompt.lower()
+                requires_no_characters = (
+                    "no character" in custom_lower or
+                    "không tạo nhân vật" in custom_lower or
+                    "cấm tạo nhân vật" in custom_lower or
+                    "character_bible = []" in custom_prompt or
+                    "character_bible=[]" in custom_prompt.replace(" ", "") or
+                    ("panora" in topic.lower() and "cấm tạo nhân vật" in custom_lower)
+                )
+        except Exception:
+            pass
+
     # BUG FIX #2: Enhanced character consistency locks
+    # SKIP character locks for no-character domains (e.g., PANORA)
     hard_locks = {
-        "identity": "CRITICAL: Keep same person/character across all scenes. Same face, same body, same identity. Do NOT change the character or introduce different people.",
-        "wardrobe": "Outfit consistency is required. Do NOT change outfit, color, or add accessories without instruction.",
-        "hair_makeup": "Keep hair and makeup consistent; do NOT change length or color unless explicitly instructed.",
         "location": location_lock
     }
+    
+    # Only add character-related locks if characters are allowed
+    if not requires_no_characters:
+        hard_locks["identity"] = "CRITICAL: Keep same person/character across all scenes. Same face, same body, same identity. Do NOT change the character or introduce different people."
+        hard_locks["wardrobe"] = "Outfit consistency is required. Do NOT change outfit, color, or add accessories without instruction."
+        hard_locks["hair_makeup"] = "Keep hair and makeup consistent; do NOT change length or color unless explicitly instructed."
 
     # Part D: Enhanced character details with detailed bible
     # Keep original character_details from character_bible without modification
     # This ensures the prompt JSON is sent unmodified to Google Labs Flow
-    character_details = "CRITICAL: Keep same person/character across all scenes. Primary talent remains visually consistent across all scenes."
-    if enhanced_bible and hasattr(enhanced_bible, 'characters'):
+    # SKIP character_details for no-character domains (e.g., PANORA)
+    character_details = ""
+    if not requires_no_characters:
+        character_details = "CRITICAL: Keep same person/character across all scenes. Primary talent remains visually consistent across all scenes."
+    if not requires_no_characters and enhanced_bible and hasattr(enhanced_bible, 'characters'):
         # Use detailed character bible - preserve original without injection
         try:
             # Build character details from enhanced bible characters with MORE DETAIL
@@ -536,7 +565,7 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
             import sys
             print(f"[WARN] Character bible processing failed: {e}", file=sys.stderr)
             # Intentional fallback to basic character_details - continue processing
-    elif character_bible and isinstance(character_bible, list) and len(character_bible) > 0:
+    elif not requires_no_characters and character_bible and isinstance(character_bible, list) and len(character_bible) > 0:
         # BUG FIX #2: Include ALL characters with visual_identity and CRITICAL consistency note
         # Enhanced with MORE DETAIL including physical attributes and accessories
         char_parts = []
