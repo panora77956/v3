@@ -247,6 +247,14 @@ class VertexAIClient:
                             f"Please wait a few minutes before trying again."
                         ) from last_error
                 
+                # Check if it's a permission error (403)
+                elif '403' in error_str and ('permission' in error_str or 'denied' in error_str):
+                    raise RuntimeError(
+                        f"Vertex AI generation failed: {e}. "
+                        f"The service account does not have required permissions. "
+                        f"Please grant 'aiplatform.endpoints.predict' permission or use a different account."
+                    ) from e
+                
                 # For other errors, don't retry
                 else:
                     raise RuntimeError(f"Vertex AI generation failed: {e}") from e
