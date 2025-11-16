@@ -650,6 +650,55 @@ def generate_image_with_rate_limit(
                 log(f"[ERROR] Whisk generation failed: {str(e)[:100]}")
                 return None
 
+        elif model.lower() == "flow":
+            log("[IMAGE GEN] Tạo ảnh với Flow...")
+            
+            try:
+                from services import flow_image_service
+
+                # Convert aspect ratio to Flow format
+                flow_aspect_ratio = "IMAGE_ASPECT_RATIO_PORTRAIT"
+                if aspect_ratio:
+                    if aspect_ratio in ("9:16", "4:5", "3:4"):
+                        flow_aspect_ratio = "IMAGE_ASPECT_RATIO_PORTRAIT"
+                    elif aspect_ratio in ("16:9", "21:9", "4:3"):
+                        flow_aspect_ratio = "IMAGE_ASPECT_RATIO_LANDSCAPE"
+                    elif aspect_ratio == "1:1":
+                        flow_aspect_ratio = "IMAGE_ASPECT_RATIO_SQUARE"
+
+                # Flow can work with or without reference images
+                if reference_images and len(reference_images) > 0:
+                    log(f"[INFO] Flow: Using {len(reference_images)} reference images")
+                    result = flow_image_service.generate_flow_image(
+                        prompt=actual_prompt,
+                        reference_images=reference_images,
+                        aspect_ratio=flow_aspect_ratio,
+                        num_images=4,
+                        log_callback=log_fn
+                    )
+                else:
+                    log("[INFO] Flow: Text-only generation (no reference images)")
+                    result = flow_image_service.generate_flow_image_text_only(
+                        prompt=actual_prompt,
+                        aspect_ratio=flow_aspect_ratio,
+                        num_images=4,
+                        log_callback=log_fn
+                    )
+
+                if result:
+                    log("[SUCCESS] Flow generation complete!")
+                    return result
+                else:
+                    log("[ERROR] Flow returned no data")
+                    return None
+
+            except ImportError as ie:
+                log(f"[ERROR] Flow service không khả dụng: {ie}")
+                return None
+            except Exception as e:
+                log(f"[ERROR] Flow generation failed: {str(e)[:100]}")
+                return None
+
         else:
             log(f"[ERROR] Unsupported model: {model}")
             return None
