@@ -1466,54 +1466,68 @@ def _call_gemini(prompt, api_key, model="gemini-2.5-flash", timeout=None, durati
                     else:
                         timeout = 180
                 
-                # Try to get service account from manager
+                # Try all enabled service accounts
                 account_mgr = get_vertex_account_manager()
                 account_mgr.load_from_config(config)
-                account = account_mgr.get_next_account()
+                enabled_accounts = account_mgr.get_enabled_accounts()
                 
-                if not account:
+                if not enabled_accounts:
                     report_progress("[TEXT GEN] Không có Vertex AI service account khả dụng, sử dụng AI Studio API")
                     # Continue to AI Studio fallback
                 else:
-                    report_progress(f"[TEXT GEN] Đang thử Vertex AI với account: {account.name}")
-                    
-                    # Use Vertex AI model if specified, otherwise use default
-                    vertex_model = VERTEX_AI_TEXT_MODEL if model == "gemini-2.5-flash" else model
-                    
-                    report_progress(f"Trying Vertex AI with model {vertex_model}...")
-                    
-                    vertex_client = VertexAIClient(
-                        model=vertex_model,
-                        project_id=account.project_id,
-                        location=account.location,
-                        api_key=api_key,
-                        use_vertex=True,
-                        credentials_json=account.credentials_json
-                    )
-                    
-                    # Detect if using custom prompt (contains enforcement header)
-                    # Custom prompts already include system instructions, so use stricter system instruction
-                    is_custom_prompt = "CRITICAL ENFORCEMENT RULES" in prompt or "CUSTOM SYSTEM PROMPT:" in prompt
-                    
-                    if is_custom_prompt:
-                        system_instruction = "You are a professional AI assistant. Strictly follow all rules in the prompt. Generate valid JSON output."
-                    else:
-                        system_instruction = "You are a professional AI assistant. Generate valid JSON output when requested."
-                    
-                    # Generate content - VertexAIClient handles retries internally
-                    result = vertex_client.generate_content(
-                        prompt=prompt,
-                        system_instruction=system_instruction,
-                        temperature=0.9,
-                        timeout=timeout,
-                        max_retries=5
-                    )
-                    
-                    report_progress("✓ Vertex AI generation successful")
-                    return parse_llm_response_safe(result, "Vertex AI")
+                    # Try each enabled account
+                    for account in enabled_accounts:
+                        try:
+                            report_progress(f"[TEXT GEN] Đang thử Vertex AI với account: {account.name}")
+                            
+                            # Use Vertex AI model if specified, otherwise use default
+                            vertex_model = VERTEX_AI_TEXT_MODEL if model == "gemini-2.5-flash" else model
+                            
+                            report_progress(f"Trying Vertex AI with model {vertex_model}...")
+                            
+                            vertex_client = VertexAIClient(
+                                model=vertex_model,
+                                project_id=account.project_id,
+                                location=account.location,
+                                api_key=api_key,
+                                use_vertex=True,
+                                credentials_json=account.credentials_json
+                            )
+                            
+                            # Detect if using custom prompt (contains enforcement header)
+                            # Custom prompts already include system instructions, so use stricter system instruction
+                            is_custom_prompt = "CRITICAL ENFORCEMENT RULES" in prompt or "CUSTOM SYSTEM PROMPT:" in prompt
+                            
+                            if is_custom_prompt:
+                                system_instruction = "You are a professional AI assistant. Strictly follow all rules in the prompt. Generate valid JSON output."
+                            else:
+                                system_instruction = "You are a professional AI assistant. Generate valid JSON output when requested."
+                            
+                            # Generate content - VertexAIClient handles retries internally
+                            result = vertex_client.generate_content(
+                                prompt=prompt,
+                                system_instruction=system_instruction,
+                                temperature=0.9,
+                                timeout=timeout,
+                                max_retries=2  # Reduced retries per account
+                            )
+                            
+                            report_progress("✓ Vertex AI generation successful")
+                            return parse_llm_response_safe(result, "Vertex AI")
+                        
+                        except Exception as account_error:
+                            error_str = str(account_error).lower()
+                            # For permission errors, try next account
+                            if '403' in error_str and ('permission' in error_str or 'denied' in error_str):
+                                report_progress(f"Vertex AI failed: {account_error}. Falling back to AI Studio API...")
+                                continue  # Try next account
+                            else:
+                                # For other errors, stop trying Vertex AI
+                                report_progress(f"Vertex AI failed: {account_error}. Falling back to AI Studio API...")
+                                break  # Stop trying Vertex AI accounts
                 
             except Exception as e:
-                report_progress(f"Vertex AI failed: {e}. Falling back to AI Studio API...")
+                report_progress(f"Vertex AI initialization failed: {e}. Falling back to AI Studio API...")
                 # Continue to AI Studio fallback below
     except Exception as e:
         # Config file error or Vertex AI import error - continue to AI Studio
