@@ -1661,6 +1661,11 @@ class Text2VideoPanelV5(QWidget):
         prdir = ctx.get("dir_prompts", "")
 
         for i, sc in enumerate(data.get("scenes", []), 1):
+            # Type guard: Ensure sc is a dict, not a string
+            if not isinstance(sc, dict):
+                self._append_log(f"[WARN] Scene {i} data is not a dict, skipping")
+                continue
+            
             r = self.table.rowCount()
             self.table.insertRow(r)
             self.table.setItem(r, 0, QTableWidgetItem(str(i)))
@@ -1678,7 +1683,15 @@ class Text2VideoPanelV5(QWidget):
                 try:
                     lang_code = self.cb_out_lang.currentData()
                     character_bible_basic = data.get("character_bible", [])
+                    # Type guard: Ensure character_bible is a list
+                    if not isinstance(character_bible_basic, list):
+                        character_bible_basic = []
                     voice_settings = self.get_voice_settings()
+                    
+                    # Type guard: Ensure voice_settings is a dict, not a string
+                    if voice_settings and not isinstance(voice_settings, dict):
+                        voice_settings = None
+                    
                     location_ctx = extract_location_context(sc) if extract_location_context else None
 
                     # Get additional parameters for enhanced prompt JSON
@@ -1691,6 +1704,9 @@ class Text2VideoPanelV5(QWidget):
 
                     # Part G: Extract dialogues from scene data for voiceover
                     dialogues = sc.get("dialogues", [])
+                    # Type guard: Ensure dialogues is a list
+                    if not isinstance(dialogues, list):
+                        dialogues = []
                     
                     # Issue #33: Get base_seed from context for character consistency
                     # PR #8: Get style_seed from context for visual style consistency
