@@ -455,11 +455,22 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
                     key_trait = char.get("key_trait", "")
                     
                     # Extract detailed physical attributes from character bible
+                    # Type guard: Ensure nested fields are dicts/lists, not strings
                     hair_dna = char.get("hair_dna", {})
+                    if not isinstance(hair_dna, dict):
+                        hair_dna = {}
                     eye_signature = char.get("eye_signature", {})
+                    if not isinstance(eye_signature, dict):
+                        eye_signature = {}
                     physical_blueprint = char.get("physical_blueprint", {})
+                    if not isinstance(physical_blueprint, dict):
+                        physical_blueprint = {}
                     facial_map = char.get("facial_map", {})
+                    if not isinstance(facial_map, dict):
+                        facial_map = {}
                     consistency_anchors = char.get("consistency_anchors", [])
+                    if not isinstance(consistency_anchors, list):
+                        consistency_anchors = []
 
                     if nm:
                         # Build EXTREMELY DETAILED character description with physical attributes and accessories
@@ -539,11 +550,22 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
             key_trait = char.get("key_trait", "")
             
             # Extract detailed physical attributes from character bible
+            # Type guard: Ensure nested fields are dicts/lists, not strings
             hair_dna = char.get("hair_dna", {})
+            if not isinstance(hair_dna, dict):
+                hair_dna = {}
             eye_signature = char.get("eye_signature", {})
+            if not isinstance(eye_signature, dict):
+                eye_signature = {}
             physical_blueprint = char.get("physical_blueprint", {})
+            if not isinstance(physical_blueprint, dict):
+                physical_blueprint = {}
             facial_map = char.get("facial_map", {})
+            if not isinstance(facial_map, dict):
+                facial_map = {}
             consistency_anchors = char.get("consistency_anchors", [])
+            if not isinstance(consistency_anchors, list):
+                consistency_anchors = []
 
             if nm:
                 # Build EXTREMELY DETAILED character description with physical attributes and accessories
@@ -659,6 +681,9 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     # if len(vo_text)>240: vo_text = vo_text[:240] + "…"
 
     # Part F: Build comprehensive voiceover config with all TTS details
+    # Type guard: Ensure voice_settings is a dict, not a string
+    if voice_settings and not isinstance(voice_settings, dict):
+        voice_settings = None
     speaking_style = voice_settings.get("speaking_style", "storytelling") if voice_settings else "storytelling"
     rate_multiplier = voice_settings.get("rate_multiplier", 1.0) if voice_settings else 1.0
     pitch_adjust = voice_settings.get("pitch_adjust", 0) if voice_settings else 0
@@ -668,11 +693,22 @@ def build_prompt_json(scene_index:int, desc_vi:str, desc_tgt:str, lang_code:str,
     try:
         from services.voice_options import get_style_info, get_elevenlabs_settings, SPEAKING_STYLES
         style_info = get_style_info(speaking_style)
+        # Type guard: Ensure style_info is a dict, not a string
+        if not isinstance(style_info, dict):
+            style_info = {}
         style_description = style_info.get("description", "")
 
         # Get ElevenLabs settings (using voice adjustments if available from voice_settings)
         # Note: ElevenLabs adjustments would come from separate UI controls, defaulting to 0.0 for now
         elevenlabs_settings = get_elevenlabs_settings(speaking_style, 0.0, 0.0)
+        # Type guard: Ensure elevenlabs_settings is a dict
+        if not isinstance(elevenlabs_settings, dict):
+            elevenlabs_settings = {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+                "style": 0.5,
+                "use_speaker_boost": True
+            }
     except (ImportError, KeyError, AttributeError) as e:
         print(f"[Warning] Could not load voice settings: {e}")
         style_description = ""
