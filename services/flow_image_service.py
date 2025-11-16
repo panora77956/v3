@@ -123,6 +123,11 @@ def generate_flow_image(
 ) -> Optional[bytes]:
     """
     Generate image using Flow API with reference images
+    
+    Implements intelligent account rotation with exponential backoff:
+    - Tries all available Flow accounts before failing
+    - Implements exponential backoff between account switches (10s, 20s, 40s...)
+    - Handles 429 rate limit errors gracefully
 
     Args:
         prompt: Text prompt for image generation
@@ -139,18 +144,42 @@ def generate_flow_image(
             log_callback(msg)
 
     try:
-        # Get tokens and project ID from account manager (same as video generation)
-        tokens, project_id = get_flow_tokens_and_project()
+        # Get account manager to access all enabled accounts
+        try:
+            from services.account_manager import get_account_manager
+        except ImportError:
+            raise FlowImageError(
+                "Cannot import account_manager module.\n"
+                "Không thể import module account_manager."
+            )
 
-        # Use first token (can be enhanced to rotate through tokens)
-        bearer_token = tokens[0] if tokens else None
-        if not bearer_token:
-            raise FlowImageError("No OAuth tokens available in account")
+        # Get account manager
+        account_mgr = get_account_manager()
 
-        # Generate session ID (timestamp in milliseconds with semicolon prefix)
-        session_id = f";{int(time.time() * 1000)}"
+        # Get enabled accounts
+        enabled_accounts = account_mgr.get_enabled_accounts() if account_mgr else []
 
-        # Build image inputs from reference images
+        if not enabled_accounts:
+            raise FlowImageError(
+                "Chưa cấu hình Google Labs accounts / No Google Labs accounts configured.\n"
+                "\n"
+                "Vui lòng cấu hình OAuth tokens trong tab Cài đặt (Settings):\n"
+                "Please configure OAuth tokens in the Settings tab:\n"
+                "\n"
+                "1. Mở tab Cài đặt (Settings)\n"
+                "   Open the Settings tab\n"
+                "\n"
+                "2. Tìm phần 'Google Labs Accounts (Multi-Account)'\n"
+                "   Find the 'Google Labs Accounts (Multi-Account)' section\n"
+                "\n"
+                "3. Thêm account với OAuth Flow tokens từ labs.google.com\n"
+                "   Add an account with OAuth Flow tokens from labs.google.com\n"
+                "\n"
+                "LƯU Ý: Tokens này dùng chung cho cả tạo video và tạo ảnh Flow.\n"
+                "NOTE: These tokens are shared for both video generation and Flow image generation."
+            )
+
+        # Build image inputs from reference images (do this once, outside the loop)
         image_inputs = []
         if reference_images:
             log(f"[INFO] Flow: Processing {len(reference_images)} reference images")
@@ -163,102 +192,191 @@ def generate_flow_image(
                         "imageInputType": "IMAGE_INPUT_TYPE_REFERENCE"
                     })
 
-        # Build requests array (generate multiple variants)
-        requests_array = []
-        for i in range(num_images):
-            # Generate random seed for each variant
-            seed = random.randint(100000, 999999)
+        # Try each account with exponential backoff
+        rate_limit_count = 0
+        last_error = None
 
-            request_obj = {
-                "clientContext": {
-                    "sessionId": session_id
-                },
-                "seed": seed,
-                "imageModelName": "GEM_PIX",
-                "imageAspectRatio": aspect_ratio,
-                "prompt": prompt
-            }
+        for idx, account in enumerate(enabled_accounts):
+            # Exponential backoff between account switches (similar to Vertex AI)
+            # Start with 10s base delay and double each time: 10s, 20s, 40s...
+            if idx > 0:
+                delay = 10 * (2 ** (idx - 1))
+                # Cap at 60s to avoid excessive waits
+                delay = min(delay, 60)
+                log(f"[FLOW BACKOFF] Waiting {delay}s before trying next account...")
+                time.sleep(delay)
 
-            # Add image inputs if available
-            if image_inputs:
-                request_obj["imageInputs"] = image_inputs
+            log(f"[FLOW {idx + 1}/{len(enabled_accounts)}] Đang thử account: {account.name}")
 
-            requests_array.append(request_obj)
+            # Get tokens from this account
+            if not account.tokens:
+                log(f"[FLOW] Account '{account.name}' không có OAuth tokens, bỏ qua...")
+                continue
 
-        # Build final payload
-        payload = {
-            "requests": requests_array
-        }
+            # Use first token from this account
+            bearer_token = account.tokens[0]
+            project_id = account.project_id
 
-        # Make API request
-        url = FLOW_IMAGE_GEN_URL.format(project_id=project_id)
-
-        headers = {
-            "Authorization": f"Bearer {bearer_token}",
-            "Content-Type": "text/plain;charset=UTF-8",
-            "Origin": "https://labs.google",
-            "Referer": "https://labs.google/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-
-        log(f"[INFO] Flow: Generating {num_images} image variants...")
-
-        response = requests.post(url, json=payload, headers=headers, timeout=120)
-
-        if response.status_code != 200:
-            log(f"[ERROR] Flow API returned status {response.status_code}")
             try:
-                error_data = response.json()
-                log(f"[ERROR] Error: {error_data}")
-            except Exception:
-                log(f"[ERROR] Response: {response.text[:200]}")
-            return None
+                # Generate session ID (timestamp in milliseconds with semicolon prefix)
+                session_id = f";{int(time.time() * 1000)}"
 
-        data = response.json()
+                # Build requests array (generate multiple variants)
+                requests_array = []
+                for i in range(num_images):
+                    # Generate random seed for each variant
+                    seed = random.randint(100000, 999999)
 
-        # Parse response to get image URLs
-        # Response: {"responses": [{"imageGenerationResponse": ...}]}
-        try:
-            if "responses" in data and len(data["responses"]) > 0:
-                first_response = data["responses"][0]
+                    request_obj = {
+                        "clientContext": {
+                            "sessionId": session_id
+                        },
+                        "seed": seed,
+                        "imageModelName": "GEM_PIX",
+                        "imageAspectRatio": aspect_ratio,
+                        "prompt": prompt
+                    }
 
-                if "imageGenerationResponse" in first_response:
-                    gen_response = first_response["imageGenerationResponse"]
+                    # Add image inputs if available
+                    if image_inputs:
+                        request_obj["imageInputs"] = image_inputs
 
-                    generated = gen_response.get("generatedImages", [])
-                    if generated:
-                        first_image = generated[0]
+                    requests_array.append(request_obj)
 
-                        # Get image URL (could be gcsUrl, signedUrl, or downloadUrl)
-                        image_url = (
-                            first_image.get("gcsUrl") or
-                            first_image.get("signedUrl") or
-                            first_image.get("downloadUrl")
-                        )
+                # Build final payload
+                payload = {
+                    "requests": requests_array
+                }
 
-                        if image_url:
-                            log("[INFO] Flow: Downloading generated image...")
+                # Make API request
+                url = FLOW_IMAGE_GEN_URL.format(project_id=project_id)
 
-                            # Download the image
-                            img_response = requests.get(image_url, timeout=60)
+                headers = {
+                    "Authorization": f"Bearer {bearer_token}",
+                    "Content-Type": "text/plain;charset=UTF-8",
+                    "Origin": "https://labs.google",
+                    "Referer": "https://labs.google/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
 
-                            if img_response.status_code == 200:
-                                size = len(img_response.content)
-                                log(f"[INFO] Flow: Image generated ({size} bytes)")
-                                return img_response.content
-                            else:
-                                status = img_response.status_code
-                                log(f"[ERROR] Flow: Download failed ({status})")
-                                return None
+                log(f"[INFO] Flow: Generating {num_images} image variants...")
 
-            log("[ERROR] Flow: No images in response")
-            log(f"[DEBUG] Response structure: {str(data)[:300]}")
-            return None
+                response = requests.post(url, json=payload, headers=headers, timeout=120)
 
-        except (KeyError, TypeError, IndexError) as e:
-            log(f"[ERROR] Flow: Failed to parse response: {e}")
-            log(f"[DEBUG] Response: {str(data)[:300]}")
-            return None
+                if response.status_code != 200:
+                    # Check if it's a rate limit error (429)
+                    if response.status_code == 429:
+                        rate_limit_count += 1
+                        log(f"[FLOW] ⚠️ Account '{account.name}': Rate limit exceeded (429 RESOURCE_EXHAUSTED)")
+                        
+                        try:
+                            error_data = response.json()
+                            # Try to extract meaningful error message
+                            if 'error' in error_data:
+                                error_info = error_data['error']
+                                message = error_info.get('message', 'Rate limit exceeded')
+                                log(f"[FLOW] Error details: {message}")
+                        except Exception:
+                            pass
+                        
+                        log(f"[RATE LIMIT] Account {account.name} hit rate limit - {rate_limit_count}/{len(enabled_accounts)} accounts exhausted")
+                        
+                        # If all accounts are rate limited, warn user
+                        if rate_limit_count >= len(enabled_accounts):
+                            log(f"[WARNING] All {len(enabled_accounts)} Flow accounts are rate limited")
+                        
+                        # Continue to next account with backoff
+                        continue
+                    else:
+                        # Other error status codes
+                        log(f"[ERROR] Flow API returned status {response.status_code}")
+                        try:
+                            error_data = response.json()
+                            log(f"[ERROR] Error: {error_data}")
+                        except Exception:
+                            log(f"[ERROR] Response: {response.text[:200]}")
+                        # Continue to next account
+                        continue
+
+                # Success! Parse response to get image URLs
+                data = response.json()
+
+                # Response: {"responses": [{"imageGenerationResponse": ...}]}
+                try:
+                    if "responses" in data and len(data["responses"]) > 0:
+                        first_response = data["responses"][0]
+
+                        if "imageGenerationResponse" in first_response:
+                            gen_response = first_response["imageGenerationResponse"]
+
+                            generated = gen_response.get("generatedImages", [])
+                            if generated:
+                                first_image = generated[0]
+
+                                # Get image URL (could be gcsUrl, signedUrl, or downloadUrl)
+                                image_url = (
+                                    first_image.get("gcsUrl") or
+                                    first_image.get("signedUrl") or
+                                    first_image.get("downloadUrl")
+                                )
+
+                                if image_url:
+                                    log("[INFO] Flow: Downloading generated image...")
+
+                                    # Download the image
+                                    img_response = requests.get(image_url, timeout=60)
+
+                                    if img_response.status_code == 200:
+                                        size = len(img_response.content)
+                                        log(f"[INFO] Flow: ✓ Image generated with account {account.name} ({size} bytes)")
+                                        return img_response.content
+                                    else:
+                                        status = img_response.status_code
+                                        log(f"[ERROR] Flow: Download failed ({status})")
+                                        # Continue to next account
+                                        continue
+
+                    # No images in response, try next account
+                    log("[ERROR] Flow: No images in response from this account")
+                    log(f"[DEBUG] Response structure: {str(data)[:300]}")
+                    continue
+
+                except (KeyError, TypeError, IndexError) as e:
+                    log(f"[ERROR] Flow: Failed to parse response: {e}")
+                    log(f"[DEBUG] Response: {str(data)[:300]}")
+                    # Continue to next account
+                    continue
+
+            except Exception as e:
+                # Handle exceptions during API call for this account
+                error_msg = str(e)
+                last_error = e
+
+                # Check if it's a rate limit error in the exception message
+                if '429' in error_msg or 'RESOURCE_EXHAUSTED' in error_msg or 'Resource exhausted' in error_msg:
+                    rate_limit_count += 1
+                    log(f"[FLOW] ⚠️ Account '{account.name}': Rate limit exceeded")
+                    log(f"[RATE LIMIT] Account {account.name} hit rate limit - {rate_limit_count}/{len(enabled_accounts)} accounts exhausted")
+                    
+                    # If all accounts are rate limited, warn user
+                    if rate_limit_count >= len(enabled_accounts):
+                        log(f"[WARNING] All {len(enabled_accounts)} Flow accounts are rate limited")
+                    
+                    # Continue to next account with backoff
+                    continue
+                else:
+                    # Other errors - log and try next account
+                    log(f"[FLOW] ⚠️ Account '{account.name}': {str(e)[:200]}")
+                    continue
+
+        # All Flow accounts exhausted
+        if rate_limit_count >= len(enabled_accounts):
+            log(f"[FLOW] All {len(enabled_accounts)} Flow accounts are rate limited")
+        else:
+            log(f"[FLOW] All {len(enabled_accounts)} Flow accounts failed")
+        
+        log("[FLOW] → No successful generation from any account")
+        return None
 
     except FlowImageError as e:
         log(f"[ERROR] Flow configuration error:\n{str(e)}")
