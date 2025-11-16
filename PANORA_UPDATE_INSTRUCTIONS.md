@@ -6,6 +6,28 @@
 ✅ Mô tả cảnh không còn bị trộn vào lời thoại
 ✅ Tuân thủ chặt chẽ ngôi thứ hai và cấu trúc 5 giai đoạn
 
+## 🆕 Cập Nhật Mới Nhất (v7.4.1)
+
+### ✨ Giải Quyết Vấn Đề Cập Nhật Từ Google Sheet
+
+**Vấn đề trước đây**: Khi cập nhật custom prompt từ Google Sheet, các cải tiến từ PR #95 (CRITICAL SEPARATION, few-shot examples) bị mất vì `domain_custom_prompts.py` bị ghi đè.
+
+**Giải pháp mới**: 
+- ✅ Hệ thống TỰ ĐỘNG thêm các cải tiến PR #95 vào PANORA custom prompt
+- ✅ Bạn có thể thoải mái cập nhật base prompt từ Google Sheet
+- ✅ Các enhancement (CRITICAL SEPARATION, few-shot examples) vẫn được giữ lại
+- ✅ Logic enhancement nằm trong code, không bị ghi đè
+
+**Cách hoạt động**:
+- Khi load PANORA custom prompt, hệ thống gọi `_enhance_panora_custom_prompt()`
+- Function này tự động thêm CRITICAL SEPARATION và few-shot examples
+- Enhancements được inject vào runtime, không lưu trong file
+
+**Lợi ích**:
+- Bạn chỉ cần maintain base prompt trong Google Sheet
+- Enhancements được quản lý trong code (dễ maintain, version control)
+- Update từ Google Sheet không làm mất các fix từ PR #95
+
 ## 🚀 Cách Áp Dụng Ngay (Quick Start)
 
 ### Bước 1: Cập Nhật Code (Nếu cần)
@@ -19,40 +41,68 @@ git pull origin main
 
 ### Bước 2: Không Cần Làm Gì Thêm!
 
-✨ **Custom prompt đã được tự động cập nhật** trong code!
+✨ **Enhancements được tự động áp dụng** trong runtime!
 
-File `services/domain_custom_prompts.py` đã có prompt mới với:
-- ✅ Phân tách rõ ràng voiceover và visual
-- ✅ Ví dụ cụ thể về đúng/sai
-- ✅ Enforcement mạnh mẽ hơn
+Khi tạo video với PANORA, hệ thống sẽ:
+- ✅ Load base custom prompt từ `domain_custom_prompts.py` (có thể từ Google Sheet)
+- ✅ TỰ ĐỘNG thêm CRITICAL SEPARATION guidelines
+- ✅ TỰ ĐỘNG thêm few-shot examples (VÍ DỤ SAI vs ĐÚNG)
+- ✅ TỰ ĐỘNG thêm final warnings và prohibitions
 
 ### Bước 3: Tạo Video Mới
 
 Khi tạo video với domain/topic PANORA, hệ thống sẽ:
-1. Tự động load custom prompt đã cải tiến
-2. Áp dụng enforcement rules nghiêm ngặt
-3. Validate output để phát hiện vi phạm
+1. Tự động load custom prompt từ file hoặc Google Sheet
+2. Tự động enhance với CRITICAL SEPARATION và examples
+3. Áp dụng enforcement rules nghiêm ngặt
+4. Validate output để phát hiện vi phạm
 
 ## 📝 Nếu Quản Lý Prompt Qua Google Sheet
 
-Nếu bạn đang cập nhật prompt qua Google Sheet:
+**✨ THAY ĐỔI QUAN TRỌNG**: Giờ đây bạn chỉ cần maintain BASE PROMPT trong Google Sheet!
 
 ### Bước 1: Mở Google Sheet
 
 Mở sheet của bạn (ví dụ: https://docs.google.com/spreadsheets/d/...)
 
-### Bước 2: Cập Nhật PANORA Prompt
+### Bước 2: Cập Nhật BASE PANORA Prompt
 
 Tìm dòng:
 - Domain: `KHOA HỌC GIÁO DỤC`
 - Topic: `PANORA - Nhà Tường thuật Khoa học`
 - Type: `custom`
 
-### Bước 3: Copy Prompt Mới
+### Bước 3: Chỉ Cần Viết Base Prompt
 
-Copy toàn bộ nội dung từ `services/domain_custom_prompts.py` (dòng 21-108) vào cột "System Prompt" trong Google Sheet.
+**KHÔNG CẦN** copy toàn bộ prompt dài từ file code nữa!
 
-**Hoặc** copy từ file `PANORA_CUSTOM_PROMPT_FOR_GOOGLE_SHEET.md` (dòng 34-166).
+Chỉ cần viết base prompt, ví dụ:
+
+```
+Bạn là Nhà Tường thuật Khoa học (Science Narrator) của kênh PANORA.
+
+I. QUY TẮC TỐI THƯỢNG (BẮT BUỘC):
+- CẤM TẠO NHÂN VẬT: Không dùng tên riêng (Anya, Kai)
+- BẮT BUỘC NGÔI THỨ HAI: Toàn bộ lời thoại dùng "Bạn", "Cơ thể của bạn"
+- CẤM DÙNG DÀN Ý BÊN NGOÀI: Tuân thủ CẤU TRÚC 5 GIAI ĐOẠN
+
+II. VISUAL IDENTITY:
+- Phong cách: Mô phỏng 3D/2D Y tế (Hologram)
+- Màu sắc: Nền Đen/Navy, Hologram Cyan, Điểm nhấn Cam
+
+III. CẤU TRÚC 5 GIAI ĐOẠN:
+1. VẤN ĐỀ - Hook 3 giây
+2. PHẢN ỨNG - Cơ thể "chiến đấu"
+3. LEO THANG - Triệu chứng xuất hiện
+4. GIỚI HẠN - Cao trào kịch tính
+5. TOÀN CẢNH - Giải thích khoa học
+```
+
+**Hệ thống sẽ TỰ ĐỘNG thêm:**
+- ✅ CRITICAL SEPARATION (Voiceover vs Visual)
+- ✅ Few-shot examples (VÍ DỤ SAI vs ĐÚNG)
+- ✅ Character prohibitions chi tiết
+- ✅ Final warnings
 
 ### Bước 4: Cập Nhật Trong App
 
@@ -60,6 +110,8 @@ Copy toàn bộ nội dung từ `services/domain_custom_prompts.py` (dòng 21-10
 2. Tìm phần "🔄 Prompts"
 3. Click "⬇ Update" button
 4. Đợi thông báo thành công
+
+**Lưu ý**: Các enhancements sẽ được thêm tự động khi chạy, không cần viết trong Google Sheet!
 
 ## 🔍 Kiểm Tra Đã Cập Nhật Thành Công
 

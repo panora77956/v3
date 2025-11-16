@@ -13,6 +13,12 @@ To keep your custom prompts:
 2. Update from Google Sheet
 3. This file will be regenerated automatically
 
+📝 NOTE FOR PANORA PROMPTS:
+The PANORA custom prompt enhancements (CRITICAL SEPARATION, few-shot examples,
+validation rules) are automatically injected by llm_story_service.py via the
+_enhance_panora_custom_prompt() function. This means you can update the base
+PANORA prompt from Google Sheets without losing the PR #95 enhancements.
+
 See: PANORA_CUSTOM_PROMPT_FOR_GOOGLE_SHEET.md for detailed instructions
 """
 
