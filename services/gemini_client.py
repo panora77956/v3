@@ -141,6 +141,76 @@ class GeminiClient:
             return gemini_text_endpoint(key)
         return f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={key}"
     
+    def _try_vertex_with_multiple_accounts(self, user_text: str, system_text: str, timeout: int = 180) -> Optional[str]:
+        """
+        Try multiple Vertex AI accounts before giving up
+        
+        Returns:
+            Generated text if successful, None otherwise
+        """
+        try:
+            from utils import config as cfg
+            from services.vertex_service_account_manager import get_vertex_account_manager
+            from services.vertex_ai_client import VertexAIClient
+            from services.core.api_config import VERTEX_AI_TEXT_MODEL
+            
+            config = cfg.load()
+            vertex_config = config.get('vertex_ai', {})
+            
+            if not vertex_config.get('enabled', False):
+                return None
+            
+            account_mgr = get_vertex_account_manager()
+            account_mgr.load_from_config(config)
+            enabled_accounts = account_mgr.get_enabled_accounts()
+            
+            if not enabled_accounts:
+                return None
+            
+            # Try each enabled account
+            for account in enabled_accounts:
+                try:
+                    print(f"[GeminiClient] Trying Vertex AI account: {account.name}")
+                    
+                    vertex_model = self.model or VERTEX_AI_TEXT_MODEL
+                    api_key = self.keys[0] if self.keys else None
+                    
+                    client = VertexAIClient(
+                        model=vertex_model,
+                        project_id=account.project_id,
+                        location=account.location,
+                        api_key=api_key,
+                        use_vertex=True,
+                        credentials_json=account.credentials_json if account.credentials_json else None
+                    )
+                    
+                    result = client.generate_content(
+                        prompt=user_text,
+                        system_instruction=system_text,
+                        temperature=0.9,
+                        timeout=timeout,
+                        max_retries=2  # Reduced retries per account
+                    )
+                    
+                    print(f"[GeminiClient] ✓ Success with Vertex AI account: {account.name}")
+                    return result
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # Only continue to next account for permission errors
+                    if '403' in error_str and ('permission' in error_str or 'denied' in error_str):
+                        print(f"[GeminiClient] Account {account.name} lacks permissions, trying next account...")
+                        continue
+                    else:
+                        # For other errors (503, 429, etc), propagate to trigger AI Studio fallback
+                        raise
+            
+            return None
+            
+        except Exception as e:
+            print(f"[GeminiClient] Error trying multiple Vertex accounts: {e}")
+            return None
+    
     def generate(self, system_text: str, user_text: str, timeout: int = 180) -> str:
         """
         Generate content using Gemini (Vertex AI or AI Studio)
@@ -164,18 +234,33 @@ class GeminiClient:
                     max_retries=5
                 )
             except Exception as e:
-                print(f"[GeminiClient] Vertex AI failed: {e}")
-                print(f"[GeminiClient] Falling back to AI Studio API")
+                error_str = str(e).lower()
+                
+                # For permission errors, try other Vertex AI accounts
+                if '403' in error_str and ('permission' in error_str or 'denied' in error_str):
+                    print(f"[INFO] Vertex AI failed: {e}. Falling back to AI Studio API...")
+                    result = self._try_vertex_with_multiple_accounts(user_text, system_text, timeout)
+                    if result:
+                        return result
+                else:
+                    print(f"[GeminiClient] Vertex AI failed: {e}")
+                    print(f"[GeminiClient] Falling back to AI Studio API")
                 # Continue to AI Studio fallback below
         
         # Fallback to AI Studio with API keys
+        print(f"[INFO] Using AI Studio API...")
         if not self.keys:
             raise MissingAPIKey("No API keys available and Vertex AI failed")
         
+        print(f"[INFO] Gemini API: {len(self.keys)} keys available, will retry up to {len(self.keys)} times")
+        
         last = None
-        for i in range(5):
+        for i in range(min(len(self.keys), 12)):  # Try up to 12 keys
             key = self._next_key()
+            # Mask the key for logging (show last 4 chars)
+            masked_key = "..." + key[-4:] if len(key) > 4 else "***"
             try:
+                print(f"[INFO] Attempt {i + 1}/{min(len(self.keys), 12)} with key {masked_key} using {self.model}")
                 body = {
                     "system_instruction": {"parts": [{"text": system_text}]},
                     "contents": [{"role": "user", "parts": [{"text": user_text}]}]
@@ -185,7 +270,9 @@ class GeminiClient:
                     raise requests.HTTPError(str(r.status_code), response=r)
                 r.raise_for_status()
                 data = r.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                result = data["candidates"][0]["content"]["parts"][0]["text"]
+                print(f"[INFO] Success with {self.model}")
+                return result
             except requests.RequestException as e:
                 last = e
                 time.sleep(1.5 * (i + 1))
