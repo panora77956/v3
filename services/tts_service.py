@@ -127,12 +127,18 @@ def synthesize_speech_google(text: str, voice_id: str, language_code: str = "vi-
                 return None
 
         except requests.exceptions.HTTPError as e:
+            # Check if response exists before accessing it
+            if e.response is None:
+                # HTTPError without response - treat as network error
+                logger.error("Google TTS API request failed: HTTPError without response")
+                return None
+
             # Sanitize error message to remove API key
-            status_code = e.response.status_code if e.response else "unknown"
+            status_code = e.response.status_code
             # Check if it's a rate limit or auth error that might succeed with another key
-            if e.response and e.response.status_code in [401, 403, 429]:
+            if status_code in [401, 403, 429]:
                 logger.warning(
-                    f"Google TTS API key {i+1} failed with {status_code}, "
+                    f"Google TTS API key {i+1} failed with status {status_code}, "
                     f"trying next key..."
                 )
                 continue
@@ -215,11 +221,17 @@ def synthesize_speech_elevenlabs(text: str, voice_id: str,
             return audio_bytes
 
         except requests.exceptions.HTTPError as e:
+            # Check if response exists before accessing it
+            if e.response is None:
+                # HTTPError without response - treat as network error
+                logger.error("ElevenLabs API request failed: HTTPError without response")
+                return None
+
             # Check if it's a rate limit or auth error that might succeed with another key
-            status_code = e.response.status_code if e.response else "unknown"
-            if e.response and e.response.status_code in [401, 429]:
+            status_code = e.response.status_code
+            if status_code in [401, 429]:
                 logger.warning(
-                    f"ElevenLabs API key {i+1} failed with {status_code}, "
+                    f"ElevenLabs API key {i+1} failed with status {status_code}, "
                     f"trying next key..."
                 )
                 continue
@@ -290,8 +302,14 @@ def synthesize_speech_openai(text: str, voice: str = "alloy",
         return audio_bytes
 
     except requests.exceptions.HTTPError as e:
+        # Check if response exists before accessing it
+        if e.response is None:
+            # HTTPError without response - treat as network error
+            logger.error("OpenAI TTS API request failed: HTTPError without response")
+            return None
+
         # Sanitize error message to not expose API key
-        status_code = e.response.status_code if e.response else "unknown"
+        status_code = e.response.status_code
         logger.error(f"OpenAI TTS API request failed with status {status_code}")
         return None
     except requests.exceptions.RequestException:
