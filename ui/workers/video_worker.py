@@ -308,6 +308,23 @@ class VideoGenerationWorker(QThread):
                         body["project_id"] = project_id
                         body["tokens"] = tokens
 
+                    # Handle image-to-video: upload image if image_path is provided
+                    image_path = scene.get("image_path")
+                    if image_path:
+                        body["image_path"] = image_path
+                        try:
+                            self.log.emit(f"[INFO] Scene {actual_scene_num}: Uploading image...")
+                            media_id = client.upload_image_file(image_path)
+                            if media_id:
+                                body["media_id"] = media_id
+                                self.log.emit(f"[HTTP] Scene {actual_scene_num}: Upload OK mediaId={media_id}")
+                            else:
+                                self.log.emit(f"[ERROR] Scene {actual_scene_num}: Image upload returned no media_id")
+                                # Continue anyway - start_one will retry upload if needed
+                        except Exception as upload_err:
+                            self.log.emit(f"[ERROR] Scene {actual_scene_num}: Image upload failed: {upload_err}")
+                            # Continue anyway - start_one will retry upload if needed
+
                     self.log.emit(f"[INFO] Start scene {actual_scene_num} with {copies} copies in one batch…")
                     rc = client.start_one(
                         body, model_key, ratio, scene["prompt"], copies=copies, project_id=project_id
@@ -1165,6 +1182,23 @@ class VideoGenerationWorker(QThread):
                 body["account_name"] = account.name
                 body["project_id"] = account.project_id
                 body["tokens"] = account.tokens
+
+                # Handle image-to-video: upload image if image_path is provided
+                image_path = scene.get("image_path")
+                if image_path:
+                    body["image_path"] = image_path
+                    try:
+                        results_queue.put(("log", f"[INFO] {thread_name}: Uploading image for scene {actual_scene_num}..."))
+                        media_id = client.upload_image_file(image_path)
+                        if media_id:
+                            body["media_id"] = media_id
+                            results_queue.put(("log", f"[HTTP] {thread_name}: Upload OK mediaId={media_id}"))
+                        else:
+                            results_queue.put(("log", f"[ERROR] {thread_name}: Image upload returned no media_id"))
+                            # Continue anyway - start_one will retry upload if needed
+                    except Exception as upload_err:
+                        results_queue.put(("log", f"[ERROR] {thread_name}: Image upload failed: {upload_err}"))
+                        # Continue anyway - start_one will retry upload if needed
 
                 try:
                     rc = client.start_one(
