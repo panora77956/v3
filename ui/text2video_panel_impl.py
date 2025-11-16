@@ -325,7 +325,8 @@ def combine_scene_prompts_for_single_video(scene_prompts: list, max_duration: fl
         combined["negatives"] = list(all_negatives)
     
     # Ensure character consistency is emphasized
-    if "character_details" in combined:
+    # Only add enhancement if character_details exists AND is not empty (skip for PANORA)
+    if "character_details" in combined and combined.get("character_details"):
         combined["character_details"] = (
             "CRITICAL: Maintain EXACT same character appearance throughout ALL scenes. "
             "Same face, same outfit, same hairstyle from beginning to end. "
